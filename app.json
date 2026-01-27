@@ -34,8 +34,9 @@
         }
       ]
     ],
-    "typedRoutes": true,
-    "baseUrl": "/battle-timer/"
+    "experiments": {
+      "typedRoutes": true,
+      "baseUrl": "/battle-timer/"
+    }
   }
-}
 }
