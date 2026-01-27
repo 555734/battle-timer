@@ -30,7 +30,12 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npx expo export -p web
+        run: |
+          npx expo export -p web
+          touch dist/.nojekyll
+
+      - name: List dist (Debug)
+        run: ls -R dist
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4

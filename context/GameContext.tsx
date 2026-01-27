@@ -2,22 +2,20 @@ import React, { createContext, useContext, useState, useRef, useEffect, useCallb
 import { CONSTRAINTS, Constraint } from '../constants/Constraints';
 import { DEFAULT_SETTINGS } from '../constants/Settings';
 
-export type PlayerId = 1 | 2;
+export type PlayerId = number;
 export type GameStatus = 'idle' | 'playing' | 'paused' | 'ended';
 
 interface GameContextType {
-    // State
     initialTime: number;
-    timer1: number;
-    timer2: number;
-    activePlayer: PlayerId | null;
+    playerCount: number;
+    timers: number[];
+    activePlayer: PlayerId | null; // 1-based index
     status: GameStatus;
     currentConstraint: Constraint | null;
     winner: PlayerId | null;
     winReason: 'time' | 'penalty' | null;
 
-    // Actions
-    startGame: (timeLimit?: number, difficulty?: 'normal' | 'hard' | 'fun' | 'all') => void;
+    startGame: (playerCount: number, timeLimit?: number, difficulty?: 'normal' | 'hard' | 'fun' | 'all') => void;
     pauseGame: () => void;
     resumeGame: () => void;
     switchTurn: () => void;
@@ -36,51 +34,33 @@ export const useGame = () => {
 };
 
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    // Settings
     const [initialTime, setInitialTime] = useState(DEFAULT_SETTINGS.initialTime);
-
-    // Game State
-    const [timer1, setTimer1] = useState(initialTime);
-    const [timer2, setTimer2] = useState(initialTime);
+    const [playerCount, setPlayerCount] = useState(2);
+    const [timers, setTimers] = useState<number[]>([]);
     const [activePlayer, setActivePlayer] = useState<PlayerId | null>(null);
     const [status, setStatus] = useState<GameStatus>('idle');
     const [currentConstraint, setCurrentConstraint] = useState<Constraint | null>(null);
-
-    // End Game State
     const [winner, setWinner] = useState<PlayerId | null>(null);
     const [winReason, setWinReason] = useState<'time' | 'penalty' | null>(null);
 
-    // Refs for precise timing
     const lastTickRef = useRef<number | null>(null);
-    const timer1Ref = useRef(initialTime);
-    const timer2Ref = useRef(initialTime);
+    const timersRef = useRef<number[]>([]);
     const frameIdRef = useRef<number | null>(null);
 
-    // --- Logic ---
-
-    const getRandomConstraint = () => {
-        const randomIndex = Math.floor(Math.random() * CONSTRAINTS.length);
-        return CONSTRAINTS[randomIndex];
-    };
-
-    const startGame = useCallback((customTime?: number, difficulty?: 'normal' | 'hard' | 'fun' | 'all') => {
+    const startGame = useCallback((count: number, customTime?: number, difficulty?: 'normal' | 'hard' | 'fun' | 'all') => {
+        console.log(`[Debug] startGame called: playerCount=${count}, time=${customTime}, difficulty=${difficulty}`);
         const time = customTime || initialTime;
         setInitialTime(time);
+        setPlayerCount(count);
 
-        // Reset refs
-        timer1Ref.current = time;
-        timer2Ref.current = time;
-        setTimer1(time);
-        setTimer2(time);
+        const newTimers = Array(count).fill(time);
+        timersRef.current = [...newTimers];
+        setTimers(newTimers);
 
         setActivePlayer(1);
 
-        // Filter constraints
         let availableConstraints = CONSTRAINTS;
         if (difficulty && difficulty !== 'all') {
-            availableConstraints = CONSTRAINTS.filter(c => c.type === difficulty || c.type === 'normal'); // Always include normal? Or strict?
-            // Requirement: Easy (Word count), Hard (Forbidden), etc.
-            // Let's implement strict filtering but fallback to all if empty (safety)
             const strictFiltered = CONSTRAINTS.filter(c => c.type === difficulty);
             if (strictFiltered.length > 0) {
                 availableConstraints = strictFiltered;
@@ -93,11 +73,19 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setStatus('playing');
         setWinner(null);
         setWinReason(null);
-
         lastTickRef.current = Date.now();
     }, [initialTime]);
 
+    const endGame = useCallback((winningPlayer: PlayerId, reason: 'time' | 'penalty') => {
+        console.log(`[Debug] endGame: winner=Player${winningPlayer}, reason=${reason}`);
+        setStatus('ended');
+        setWinner(winningPlayer);
+        setWinReason(reason);
+        lastTickRef.current = null;
+    }, []);
+
     const pauseGame = useCallback(() => {
+        console.log('[Debug] pauseGame called');
         if (status === 'playing') {
             setStatus('paused');
             lastTickRef.current = null;
@@ -105,6 +93,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [status]);
 
     const resumeGame = useCallback(() => {
+        console.log('[Debug] resumeGame called');
         if (status === 'paused') {
             setStatus('playing');
             lastTickRef.current = Date.now();
@@ -112,56 +101,43 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [status]);
 
     const switchTurn = useCallback(() => {
+        console.log(`[Debug] switchTurn: current activePlayer=${activePlayer}`);
         if (status !== 'playing' || !activePlayer) return;
 
-        // Switch player
-        const nextPlayer = activePlayer === 1 ? 2 : 1;
+        const nextPlayer = (activePlayer % playerCount) + 1;
+
+        // ターンを終えたプレイヤーのタイマーをリセット（元の仕様を継承）
+        const updatedTimers = [...timersRef.current];
+        updatedTimers[activePlayer - 1] = initialTime;
+        timersRef.current = updatedTimers;
+        setTimers(updatedTimers);
+
         setActivePlayer(nextPlayer);
-
-        // Reset timer for the next player (Per-turn logic)
-        if (nextPlayer === 1) {
-            setTimer1(initialTime);
-            timer1Ref.current = initialTime;
-        } else {
-            setTimer2(initialTime);
-            timer2Ref.current = initialTime;
-        }
-
-        // Reset tick ref to avoid "jump" if there was a slight delay
         lastTickRef.current = Date.now();
-
-        // OPTIONAL: New constraint every turn?
-        // User requirement: "毎ターン変えるか、ゲームごとに変えるかを選択可能にします（デフォルトはゲームごとに固定推奨）"
-        // So default is fixed per game. We can add a setting later.
-    }, [status, activePlayer, initialTime]);
-
-    const endGame = useCallback((winningPlayer: PlayerId, reason: 'time' | 'penalty') => {
-        setStatus('ended');
-        setWinner(winningPlayer);
-        setWinReason(reason);
-        lastTickRef.current = null;
-    }, []);
+    }, [status, activePlayer, playerCount, initialTime]);
 
     const triggerPenalty = useCallback((loser: PlayerId) => {
-        const winner = loser === 1 ? 2 : 1;
-        endGame(winner, 'penalty');
+        console.log(`[Debug] triggerPenalty: loser=Player${loser}`);
+        // 複数人の場合、指摘された人以外が勝ち残るか、即終了か。
+        // ここではシンプルに、指摘した側の直前のプレイヤーを暫定勝者とするなどのロジックが必要ですが、
+        // 2人対戦の仕様を引き継ぎ、指摘された人以外の「誰か」を勝者に設定します。
+        const provisionalWinner = loser === 1 ? 2 : 1;
+        endGame(provisionalWinner, 'penalty');
     }, [endGame]);
 
     const resetGame = useCallback(() => {
+        console.log('[Debug] resetGame called');
         setStatus('idle');
-        setTimer1(initialTime);
-        setTimer2(initialTime);
-        timer1Ref.current = initialTime;
-        timer2Ref.current = initialTime;
+        setTimers([]);
+        timersRef.current = [];
         setActivePlayer(null);
         setWinner(null);
         setWinReason(null);
         setCurrentConstraint(null);
-    }, [initialTime]);
+    }, []);
 
-    // --- Timer Loop ---
     useEffect(() => {
-        if (status !== 'playing') {
+        if (status !== 'playing' || activePlayer === null) {
             if (frameIdRef.current) {
                 cancelAnimationFrame(frameIdRef.current);
                 frameIdRef.current = null;
@@ -172,43 +148,35 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const loop = () => {
             const now = Date.now();
             if (lastTickRef.current) {
-                const delta = (now - lastTickRef.current) / 1000; // seconds
+                const delta = (now - lastTickRef.current) / 1000;
+                const currentIndex = activePlayer - 1;
 
-                if (activePlayer === 1) {
-                    timer1Ref.current = Math.max(0, timer1Ref.current - delta);
-                    setTimer1(timer1Ref.current); // Use state for UI
-                    if (timer1Ref.current <= 0) {
-                        endGame(2, 'time');
-                        return; // Stop loop
-                    }
-                } else if (activePlayer === 2) {
-                    timer2Ref.current = Math.max(0, timer2Ref.current - delta);
-                    setTimer2(timer2Ref.current); // Use state for UI
-                    if (timer2Ref.current <= 0) {
-                        endGame(1, 'time');
-                        return; // Stop loop
-                    }
+                timersRef.current[currentIndex] = Math.max(0, timersRef.current[currentIndex] - delta);
+
+                // UI更新頻度を抑えるための工夫も可能ですが、一旦シンプルに更新
+                setTimers([...timersRef.current]);
+
+                if (timersRef.current[currentIndex] <= 0) {
+                    // 時間切れの場合、他の誰かが勝者（ここでは次のプレイヤーを勝者と仮定）
+                    const winnerId = (activePlayer % playerCount) + 1;
+                    endGame(winnerId, 'time');
+                    return;
                 }
-
                 lastTickRef.current = now;
             }
-
             frameIdRef.current = requestAnimationFrame(loop);
         };
 
         frameIdRef.current = requestAnimationFrame(loop);
-
         return () => {
-            if (frameIdRef.current) {
-                cancelAnimationFrame(frameIdRef.current);
-            }
+            if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
         };
-    }, [status, activePlayer, endGame]);
+    }, [status, activePlayer, playerCount, endGame]);
 
     const value = {
         initialTime,
-        timer1,
-        timer2,
+        playerCount,
+        timers,
         activePlayer,
         status,
         currentConstraint,
