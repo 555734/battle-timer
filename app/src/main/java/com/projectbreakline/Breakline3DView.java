@@ -528,7 +528,7 @@ public final class Breakline3DView extends FrameLayout {
             bursts.clear();
             time = 0f;
             duration = 33f + stage * 1.55f;
-            spawnEnemy = 1.35f;
+            spawnEnemy = .28f;
             spawnBarrel = 2.4f;
             fireCooldown = .3f;
             hitCooldown = 0f;
@@ -568,9 +568,11 @@ public final class Breakline3DView extends FrameLayout {
                 spawnBarrelChoices();
                 spawnBarrel = Math.max(4.15f, 5.45f - stage * .075f);
             }
-            if (!bossSpawned && spawnEnemy <= 0f) {
+            if (spawnEnemy <= 0f) {
                 spawnEnemies();
-                spawnEnemy = Math.max(1.32f, 2.50f - stage * .09f);
+                spawnEnemy = bossSpawned
+                        ? Math.max(1.45f, 2.20f - stage * .055f)
+                        : Math.max(1.20f, 2.35f - stage * .085f);
             }
             if (fireCooldown <= 0f) {
                 fire();
@@ -594,7 +596,7 @@ public final class Breakline3DView extends FrameLayout {
             while (shotIterator.hasNext()) {
                 Shot shot = shotIterator.next();
                 shot.progress += dt * 5.1f;
-                if (shot.target == null || !shot.target.alive || shot.progress >= 1f) {
+                if (shot.progress >= 1f || (shot.target != null && !shot.target.alive)) {
                     if (shot.target != null && shot.target.alive && shot.progress >= 1f) {
                         shot.target.hp -= shot.damage;
                         bursts.add(new Burst(shot.target.x, shot.target.z, shot.color, .34f));
@@ -635,7 +637,8 @@ public final class Breakline3DView extends FrameLayout {
         }
 
         private void spawnEnemies() {
-            int count = stage >= 11 ? 4 : stage >= 9 ? 3 : stage >= 5 ? 2 : 1;
+            int count = bossSpawned ? (stage >= 9 ? 2 : 1)
+                    : stage >= 11 ? 4 : stage >= 9 ? 3 : stage >= 5 ? 2 : 1;
             for (int i = 0; i < count; i++) {
                 Entity e = new Entity(ENEMY);
                 float roll = random.nextFloat();
@@ -705,11 +708,14 @@ public final class Breakline3DView extends FrameLayout {
 
         private void fire() {
             Entity target = targetForPlayer();
-            if (target == null) return;
             float[] weaponDamage = {1f, .72f, 1.18f, 1.62f};
             int[] colors = {0xffffe48a, 0xffffbd48, 0xfffb7185, 0xffa5f3fc};
             int shotsPerVolley = Math.min(7, squad);
-            for (int i = 0; i < shotsPerVolley; i++) shots.add(new Shot(target, damage * weaponDamage[weapon], colors[weapon], i));
+            float aimX = target == null ? playerX : target.x;
+            float aimZ = target == null ? -23f : target.z;
+            for (int i = 0; i < shotsPerVolley; i++) {
+                shots.add(new Shot(target, damage * weaponDamage[weapon], colors[weapon], i, aimX, aimZ));
+            }
         }
 
         private Entity targetForPlayer() {
@@ -847,12 +853,16 @@ public final class Breakline3DView extends FrameLayout {
             final float damage;
             final int color;
             final int index;
+            final float aimX;
+            final float aimZ;
             float progress;
-            Shot(Entity target, float damage, int color, int index) {
+            Shot(Entity target, float damage, int color, int index, float aimX, float aimZ) {
                 this.target = target;
                 this.damage = damage;
                 this.color = color;
                 this.index = index;
+                this.aimX = aimX;
+                this.aimZ = aimZ;
             }
         }
 
@@ -1134,11 +1144,13 @@ public final class Breakline3DView extends FrameLayout {
         }
 
         private void drawShot(BattleModel state, BattleModel.Shot shot) {
-            if (shot.target == null || !shot.target.alive) return;
+            if (shot.target != null && !shot.target.alive) return;
             float p = Math.min(1f, shot.progress);
             float startX = state.playerX + (shot.index - 2) * .14f;
-            float x = lerp(startX, shot.target.x, p);
-            float z = lerp(3.1f, shot.target.z, p);
+            float endX = shot.target == null ? shot.aimX : shot.target.x;
+            float endZ = shot.target == null ? shot.aimZ : shot.target.z;
+            float x = lerp(startX, endX, p);
+            float z = lerp(3.1f, endZ, p);
             float y = lerp(1.25f, 1.15f, p);
             drawBox(x, y, z, .07f, .07f, .55f, shot.color);
             drawSphere(x, y, z - .30f, .10f, shot.color);
