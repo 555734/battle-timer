@@ -428,6 +428,7 @@ public final class Breakline3DView extends FrameLayout {
         private float spawnEnemy;
         private float spawnBarrel;
         private float fireCooldown;
+        private float hitCooldown;
         private int barrelGroup;
         private int barrels;
         private int enemies;
@@ -471,12 +472,13 @@ public final class Breakline3DView extends FrameLayout {
             shots.clear();
             bursts.clear();
             time = 0f;
-            duration = 31f + stage * 2.2f;
-            spawnEnemy = .8f;
-            spawnBarrel = 2.1f;
+            duration = 33f + stage * 1.55f;
+            spawnEnemy = 1.35f;
+            spawnBarrel = 2.4f;
             fireCooldown = .3f;
+            hitCooldown = 0f;
             playerX = 0f;
-            squad = 1;
+            squad = stage <= 2 ? 2 : 1;
             damage = 1f;
             weapon = 0;
             barrelGroup = 0;
@@ -495,23 +497,24 @@ public final class Breakline3DView extends FrameLayout {
             time += dt;
             playerX += (wantedX - playerX) * Math.min(1f, dt * 7.5f);
             fireCooldown -= dt;
+            hitCooldown = Math.max(0f, hitCooldown - dt);
             spawnEnemy -= dt;
             spawnBarrel -= dt;
             statusUntil -= dt;
             if (statusUntil <= 0f) { status = ""; danger = false; }
 
-            if (!bossSpawned && time >= duration - 7f) spawnBoss();
+            if (!bossSpawned && time >= duration - 8.5f) spawnBoss();
             if (!bossSpawned && spawnBarrel <= 0f) {
                 spawnBarrelChoices();
-                spawnBarrel = Math.max(3.6f, 5.7f - stage * .09f);
+                spawnBarrel = Math.max(4.15f, 5.45f - stage * .075f);
             }
             if (!bossSpawned && spawnEnemy <= 0f) {
                 spawnEnemies();
-                spawnEnemy = Math.max(.82f, 2.25f - stage * .065f);
+                spawnEnemy = Math.max(1.32f, 2.50f - stage * .09f);
             }
             if (fireCooldown <= 0f) {
                 fire();
-                fireCooldown = Math.max(.12f, .31f - weapon * .035f);
+                fireCooldown = new float[] {.34f, .235f, .285f, .36f}[weapon];
             }
 
             for (Entity entity : entities) {
@@ -562,7 +565,7 @@ public final class Breakline3DView extends FrameLayout {
                 e.x = lanes[i];
                 e.z = -34f;
                 e.speed = 2.25f + stage * .08f;
-                e.hp = 3f + stage * .55f + (i == 2 ? 1f : 0f);
+                e.hp = 2.35f + stage * .38f + (i == 2 ? .65f : 0f);
                 e.maxHp = e.hp;
                 e.reward = (baseReward + i) % 4;
                 e.group = group;
@@ -572,19 +575,21 @@ public final class Breakline3DView extends FrameLayout {
         }
 
         private void spawnEnemies() {
-            int count = stage >= 9 ? 3 : stage >= 3 ? 2 : 1;
+            int count = stage >= 10 ? 3 : stage >= 5 ? 2 : 1;
             for (int i = 0; i < count; i++) {
                 Entity e = new Entity(ENEMY);
                 float roll = random.nextFloat();
-                e.subtype = stage >= 7 && roll < .20f ? HEAVY : stage >= 4 && roll < .54f ? RUNNER : WALKER;
+                float heavyChance = stage < 6 ? 0f : .08f + (stage - 6) * .018f;
+                float runnerChance = stage < 3 ? 0f : .20f + (stage - 3) * .018f;
+                e.subtype = roll < heavyChance ? HEAVY : roll < heavyChance + runnerChance ? RUNNER : WALKER;
                 e.x = new float[] {-2.55f, 0f, 2.55f}[random.nextInt(3)];
                 e.z = -43f - i * 3.0f - random.nextFloat() * 4f;
-                e.speed = 3.1f + stage * .10f;
-                if (e.subtype == RUNNER) e.speed *= 1.45f;
-                if (e.subtype == HEAVY) e.speed *= .62f;
-                e.hp = 1.1f + stage * .25f;
-                if (e.subtype == RUNNER) e.hp *= .7f;
-                if (e.subtype == HEAVY) e.hp *= 3.2f;
+                e.speed = 2.75f + stage * .075f;
+                if (e.subtype == RUNNER) e.speed *= 1.34f;
+                if (e.subtype == HEAVY) e.speed *= .68f;
+                e.hp = .85f + stage * .18f;
+                if (e.subtype == RUNNER) e.hp *= .76f;
+                if (e.subtype == HEAVY) e.hp *= 2.75f;
                 e.maxHp = e.hp;
                 entities.add(e);
             }
@@ -595,7 +600,7 @@ public final class Breakline3DView extends FrameLayout {
             Entity boss = new Entity(BOSS);
             boss.x = 0f;
             boss.z = -19f;
-            boss.hp = 30f + stage * 7f;
+            boss.hp = 25f + stage * 4.8f;
             boss.maxHp = boss.hp;
             boss.attackTimer = 2.3f;
             entities.add(boss);
@@ -610,7 +615,7 @@ public final class Breakline3DView extends FrameLayout {
                 if (boss.attackTimer <= 0f) {
                     boss.attackState = 1;
                     boss.attackType = ((int) time + stage) % 2;
-                    boss.attackTimer = 1.25f;
+                    boss.attackTimer = Math.max(1.22f, 1.58f - stage * .025f);
                     boss.attackX = Math.round(playerX / 2.55f) * 2.55f;
                     boss.safeX = new float[] {-2.55f, 0f, 2.55f}[random.nextInt(3)];
                     showStatus(boss.attackType == 0 ? "赤いレーンから離れる" : "青いレーンへ移動", true, 1.3f);
@@ -619,7 +624,7 @@ public final class Breakline3DView extends FrameLayout {
                 boss.attackTimer -= dt;
                 if (boss.attackTimer <= 0f) {
                     boss.attackState = 2;
-                    boss.attackTimer = boss.attackType == 0 ? .95f : .68f;
+                    boss.attackTimer = boss.attackType == 0 ? 1.02f : .76f;
                 }
             } else {
                 boss.attackTimer -= dt;
@@ -631,7 +636,7 @@ public final class Breakline3DView extends FrameLayout {
                 }
                 if (boss.attackTimer <= 0f) {
                     boss.attackState = 0;
-                    boss.attackTimer = 1.8f + random.nextFloat() * .8f;
+                    boss.attackTimer = Math.max(1.55f, 2.35f - stage * .045f) + random.nextFloat() * .55f;
                     boss.struck = false;
                 }
             }
@@ -640,7 +645,7 @@ public final class Breakline3DView extends FrameLayout {
         private void fire() {
             Entity target = targetForPlayer();
             if (target == null) return;
-            float[] weaponDamage = {1f, .75f, 1.2f, 1.7f};
+            float[] weaponDamage = {1f, .72f, 1.18f, 1.62f};
             int[] colors = {0xffffe48a, 0xffffbd48, 0xfffb7185, 0xffa5f3fc};
             int shotsPerVolley = Math.min(5, squad);
             for (int i = 0; i < shotsPerVolley; i++) shots.add(new Shot(target, damage * weaponDamage[weapon], colors[weapon], i));
@@ -651,7 +656,10 @@ public final class Breakline3DView extends FrameLayout {
             float bestScore = -999f;
             for (Entity e : entities) {
                 if (!e.alive) continue;
-                float score = e.z - Math.abs(e.x - playerX) * 1.35f;
+                float laneDistance = Math.abs(e.x - playerX);
+                if (e.kind != BOSS && laneDistance > 1.65f) continue;
+                float score = e.z - laneDistance * 1.85f;
+                if (e.kind == BARREL) score += 1.2f;
                 if (e.kind == BOSS) score += 4f;
                 if (score > bestScore) { best = e; bestScore = score; }
             }
@@ -665,10 +673,10 @@ public final class Breakline3DView extends FrameLayout {
                 barrels++;
                 score += 5;
                 switch (target.reward) {
-                    case 0: squad = Math.min(9, squad + 1); showStatus("+1 仲間", false, 1f); break;
-                    case 1: damage += .28f; showStatus("DAMAGE UP", false, 1f); break;
+                    case 0: squad = Math.min(9, squad + (stage >= 8 ? 2 : 1)); showStatus(stage >= 8 ? "+2 仲間" : "+1 仲間", false, 1f); break;
+                    case 1: damage += .24f; showStatus("DAMAGE UP", false, 1f); break;
                     case 2: weapon = Math.min(3, weapon + 1); showStatus("WEAPON UP", false, 1f); break;
-                    default: damage += .12f; squad = Math.min(9, squad + 1); showStatus("SQUAD BOOST", false, 1f); break;
+                    default: damage += .10f; squad = Math.min(9, squad + 1); showStatus("SQUAD BOOST", false, 1f); break;
                 }
                 bursts.add(new Burst(target.x, target.z, 0xffffc263, .7f));
             } else if (target.kind == ENEMY) {
@@ -683,6 +691,8 @@ public final class Breakline3DView extends FrameLayout {
         }
 
         private void hitPlayer(int amount, float x, float z) {
+            if (hitCooldown > 0f || mode != PLAYING) return;
+            hitCooldown = .62f;
             squad = Math.max(0, squad - amount);
             bursts.add(new Burst(x, z, 0xffff506a, .55f));
             showStatus("-" + amount + " 仲間", true, .8f);
@@ -701,7 +711,7 @@ public final class Breakline3DView extends FrameLayout {
             if (mode != PLAYING) return;
             mode = RESULT;
             win = stageWin;
-            resultCoins = stageWin ? 7 + stage * 4 + score / 12 : Math.max(1, score / 24);
+            resultCoins = stageWin ? 8 + stage * 3 + score / 14 : Math.max(2, score / 22);
             coins += resultCoins;
             if (stageWin) unlocked = Math.max(unlocked, Math.min(12, stage + 1));
             prefs.edit().putInt("coins", coins).putInt("unlocked", unlocked).apply();
