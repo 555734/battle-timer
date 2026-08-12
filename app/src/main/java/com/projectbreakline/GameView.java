@@ -375,8 +375,8 @@ public final class GameView extends View {
     private void drawBridgeRailings(Canvas canvas, float topY) {
         stroke.setColor(0xffc0c9cb);
         stroke.setStrokeWidth(3f * ui);
-        canvas.drawLine(roadBounds(topY, true) - 5f * ui, topY, roadBounds(height, true) - 5f * ui, height);
-        canvas.drawLine(roadBounds(topY, false) + 5f * ui, topY, roadBounds(height, false) + 5f * ui, height);
+        canvas.drawLine(roadBounds(topY, true) - 5f * ui, topY, roadBounds(height, true) - 5f * ui, height, stroke);
+        canvas.drawLine(roadBounds(topY, false) + 5f * ui, topY, roadBounds(height, false) + 5f * ui, height, stroke);
         for (float y = topY + 22f * ui; y < height; y += 48f * ui) {
             float inset = clamp((y - topY) / Math.max(1f, height - topY), 0f, 1f);
             float postH = lerp(9f, 23f, inset) * ui;
@@ -1520,6 +1520,7 @@ public final class GameView extends View {
         float hint = 5f;
         float finishTimer;
         float shake;
+        float flash;
         int score;
         int barrelsBroken;
         int enemiesDefeated;
