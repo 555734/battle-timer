@@ -103,6 +103,12 @@ public final class Breakline3DView extends FrameLayout {
         });
     }
 
+    private void purchaseUpgrade(final int type) {
+        surface.queueEvent(new Runnable() {
+            @Override public void run() { model.purchaseUpgrade(type); publish(); }
+        });
+    }
+
     void tickFromRenderer(float dt) {
         model.tick(dt, desiredLane);
         publish();
@@ -206,6 +212,9 @@ public final class Breakline3DView extends FrameLayout {
                         return;
                     }
                 }
+                for (int i = 0; i < 3; i++) {
+                    if (upgradeRect(i).contains(x, y)) { host.purchaseUpgrade(i); return; }
+                }
             } else if (s.mode == PLAYING) {
                 if (pauseRect().contains(x, y)) {
                     host.togglePause();
@@ -250,8 +259,18 @@ public final class Breakline3DView extends FrameLayout {
                 drawText(c, open ? String.format(Locale.JAPAN, "%02d", i + 1) : "LOCK", r.centerX(), r.top + 31f * density(), 15f, open ? Color.WHITE : 0xff72849a, true, true);
                 drawText(c, stageName(i), r.centerX(), r.bottom - 13f * density(), 8.5f, open ? 0xff9be8ff : 0xff71849a, false, true);
             }
-            drawText(c, "樽：仲間 / 威力 / 連射 / 武器", w * .10f, h * .84f, 10f, 0xffb8cee2, false, false);
-            drawText(c, "敵：ウォーカー / ランナー / ヘビー / ボス", w * .10f, h * .875f, 10f, 0xffb8cee2, false, false);
+            drawText(c, "PERMANENT UPGRADES", w * .10f, h * .805f, 9f, 0xffffd166, true, false);
+            int[] levels = {s.powerLevel, s.recruitLevel, s.armorLevel};
+            String[] labels = {"火力", "初期隊員", "防具"};
+            for (int i = 0; i < 3; i++) {
+                RectF r = upgradeRect(i);
+                int cost = upgradeCost(levels[i]);
+                boolean max = levels[i] >= 5;
+                drawCard(c, r, 0xe70a2038, max ? 0xff75f0b6 : s.coins >= cost ? 0xffffd166 : 0xff40566b);
+                drawText(c, labels[i] + "  LV." + levels[i], r.centerX(), r.top + 17f * density(), 8.5f, Color.WHITE, true, true);
+                drawText(c, max ? "MAX" : cost + " COIN", r.centerX(), r.bottom - 10f * density(), 8f, max ? 0xff75f0b6 : 0xffffd166, true, true);
+            }
+            drawText(c, "所持コイン  " + s.coins, w * .10f, h * .955f, 10f, 0xffd8e6f0, true, false);
         }
 
         private void drawHud(Canvas c, UiSnapshot s) {
@@ -273,6 +292,8 @@ public final class Breakline3DView extends FrameLayout {
             drawMini(c, new RectF(14f * density(), bottom, 102f * density(), bottom + 43f * density()), "仲間", String.valueOf(s.squad), 0xff75f0b6);
             drawMini(c, new RectF(w * .5f - 58f * density(), bottom, w * .5f + 58f * density(), bottom + 43f * density()), "武器", s.weapon, 0xffffd166);
             drawMini(c, new RectF(w - 102f * density(), bottom, w - 14f * density(), bottom + 43f * density()), "コイン", String.valueOf(s.coins), 0xffa5f3fc);
+            if (s.combo > 1) drawText(c, "COMBO  x" + s.combo, w - 20f * density(), 88f * density(), 13f, 0xffffd166, true, false);
+            if (s.armor > 0) drawText(c, "ARMOR  " + s.armor, 20f * density(), 88f * density(), 9f, 0xff7dd3fc, true, false);
 
             if (s.status.length() > 0 && !s.paused) {
                 float boxW = Math.min(w * .80f, 308f * density());
@@ -360,6 +381,14 @@ public final class Breakline3DView extends FrameLayout {
         private RectF mainResultRect() { float w = getWidth(), h = getHeight(); return new RectF(w * .10f, h * .62f, w * .58f, h * .62f + 54f * density()); }
         private RectF stageResultRect() { float w = getWidth(), h = getHeight(); return new RectF(w * .10f, h * .62f + 68f * density(), w * .58f, h * .62f + 122f * density()); }
 
+        private RectF upgradeRect(int index) {
+            float w = getWidth(), h = getHeight(), d = density(), left = w * .10f, gap = 7f * d;
+            float cardW = (w - left * 2f - gap * 2f) / 3f, top = h * .825f;
+            return new RectF(left + index * (cardW + gap), top, left + index * (cardW + gap) + cardW, top + 55f * d);
+        }
+
+        private int upgradeCost(int level) { return level >= 5 ? 0 : 18 + level * 17; }
+
         private RectF stageRect(int index) {
             float w = getWidth(), h = getHeight(), d = density();
             float left = w * .10f;
@@ -392,6 +421,11 @@ public final class Breakline3DView extends FrameLayout {
         int barrels;
         int enemies;
         int resultCoins;
+        int powerLevel;
+        int recruitLevel;
+        int armorLevel;
+        int combo;
+        int armor;
         boolean paused;
         boolean win;
         float time;
@@ -434,6 +468,12 @@ public final class Breakline3DView extends FrameLayout {
         private int enemies;
         private int score;
         private int resultCoins;
+        private int powerLevel;
+        private int recruitLevel;
+        private int armorLevel;
+        private int combo;
+        private int armor;
+        private float comboTimer;
         private boolean paused;
         private boolean bossSpawned;
         private boolean bossDefeated;
@@ -446,6 +486,21 @@ public final class Breakline3DView extends FrameLayout {
             this.prefs = prefs;
             unlocked = Math.max(1, Math.min(12, prefs.getInt("unlocked", 1)));
             coins = prefs.getInt("coins", 0);
+            powerLevel = Math.max(0, Math.min(5, prefs.getInt("power_level", 0)));
+            recruitLevel = Math.max(0, Math.min(5, prefs.getInt("recruit_level", 0)));
+            armorLevel = Math.max(0, Math.min(5, prefs.getInt("armor_level", 0)));
+        }
+
+        void purchaseUpgrade(int type) {
+            int level = type == 0 ? powerLevel : type == 1 ? recruitLevel : armorLevel;
+            if (level >= 5) { showStatus("アップグレード済み", false, .8f); return; }
+            int cost = 18 + level * 17;
+            if (coins < cost) { showStatus("コインが足りません", true, .9f); return; }
+            coins -= cost;
+            if (type == 0) powerLevel++; else if (type == 1) recruitLevel++; else armorLevel++;
+            prefs.edit().putInt("coins", coins).putInt("power_level", powerLevel)
+                    .putInt("recruit_level", recruitLevel).putInt("armor_level", armorLevel).apply();
+            showStatus("アップグレード完了", false, .9f);
         }
 
         void showMenu() {
@@ -478,8 +533,11 @@ public final class Breakline3DView extends FrameLayout {
             fireCooldown = .3f;
             hitCooldown = 0f;
             playerX = 0f;
-            squad = stage <= 2 ? 2 : 1;
-            damage = 1f;
+            squad = Math.min(12, (stage <= 2 ? 2 : 1) + recruitLevel);
+            damage = 1f + powerLevel * .12f;
+            armor = armorLevel;
+            combo = 0;
+            comboTimer = 0f;
             weapon = 0;
             barrelGroup = 0;
             barrels = 0;
@@ -498,6 +556,8 @@ public final class Breakline3DView extends FrameLayout {
             playerX += (wantedX - playerX) * Math.min(1f, dt * 7.5f);
             fireCooldown -= dt;
             hitCooldown = Math.max(0f, hitCooldown - dt);
+            comboTimer = Math.max(0f, comboTimer - dt);
+            if (comboTimer <= 0f) combo = 0;
             spawnEnemy -= dt;
             spawnBarrel -= dt;
             statusUntil -= dt;
@@ -523,7 +583,7 @@ public final class Breakline3DView extends FrameLayout {
                 if (entity.kind == BOSS) updateBoss(entity, dt);
                 else entity.z += entity.speed * dt;
                 if (entity.kind != BOSS && entity.z > 2.7f) {
-                    if (Math.abs(entity.x - playerX) < (entity.subtype == HEAVY ? 1.45f : 1.12f)) {
+                    if (entity.kind == ENEMY && Math.abs(entity.x - playerX) < (entity.subtype == HEAVY ? 1.45f : 1.12f)) {
                         hitPlayer(entity.subtype == HEAVY ? 2 : 1, entity.x, entity.z);
                     }
                     entity.alive = false;
@@ -575,7 +635,7 @@ public final class Breakline3DView extends FrameLayout {
         }
 
         private void spawnEnemies() {
-            int count = stage >= 10 ? 3 : stage >= 5 ? 2 : 1;
+            int count = stage >= 11 ? 4 : stage >= 9 ? 3 : stage >= 5 ? 2 : 1;
             for (int i = 0; i < count; i++) {
                 Entity e = new Entity(ENEMY);
                 float roll = random.nextFloat();
@@ -597,6 +657,7 @@ public final class Breakline3DView extends FrameLayout {
 
         private void spawnBoss() {
             bossSpawned = true;
+            for (Entity e : entities) if (e.kind != BOSS) e.alive = false;
             Entity boss = new Entity(BOSS);
             boss.x = 0f;
             boss.z = -19f;
@@ -647,7 +708,7 @@ public final class Breakline3DView extends FrameLayout {
             if (target == null) return;
             float[] weaponDamage = {1f, .72f, 1.18f, 1.62f};
             int[] colors = {0xffffe48a, 0xffffbd48, 0xfffb7185, 0xffa5f3fc};
-            int shotsPerVolley = Math.min(5, squad);
+            int shotsPerVolley = Math.min(7, squad);
             for (int i = 0; i < shotsPerVolley; i++) shots.add(new Shot(target, damage * weaponDamage[weapon], colors[weapon], i));
         }
 
@@ -673,15 +734,18 @@ public final class Breakline3DView extends FrameLayout {
                 barrels++;
                 score += 5;
                 switch (target.reward) {
-                    case 0: squad = Math.min(9, squad + (stage >= 8 ? 2 : 1)); showStatus(stage >= 8 ? "+2 仲間" : "+1 仲間", false, 1f); break;
+                    case 0: squad = Math.min(12, squad + (stage >= 8 ? 2 : 1)); showStatus(stage >= 8 ? "+2 仲間" : "+1 仲間", false, 1f); break;
                     case 1: damage += .24f; showStatus("DAMAGE UP", false, 1f); break;
                     case 2: weapon = Math.min(3, weapon + 1); showStatus("WEAPON UP", false, 1f); break;
-                    default: damage += .10f; squad = Math.min(9, squad + 1); showStatus("SQUAD BOOST", false, 1f); break;
+                    default: damage += .10f; squad = Math.min(12, squad + 1); showStatus("SQUAD BOOST", false, 1f); break;
                 }
                 bursts.add(new Burst(target.x, target.z, 0xffffc263, .7f));
             } else if (target.kind == ENEMY) {
                 enemies++;
-                score += target.subtype == HEAVY ? 24 : target.subtype == RUNNER ? 14 : 10;
+                combo = Math.min(12, combo + 1);
+                comboTimer = 2.6f;
+                int base = target.subtype == HEAVY ? 24 : target.subtype == RUNNER ? 14 : 10;
+                score += base * (100 + Math.max(0, combo - 1) * 12) / 100;
                 bursts.add(new Burst(target.x, target.z, target.subtype == HEAVY ? 0xffffa2b3 : 0xffff687d, .48f));
             } else {
                 bossDefeated = true;
@@ -693,6 +757,14 @@ public final class Breakline3DView extends FrameLayout {
         private void hitPlayer(int amount, float x, float z) {
             if (hitCooldown > 0f || mode != PLAYING) return;
             hitCooldown = .62f;
+            combo = 0;
+            comboTimer = 0f;
+            if (armor > 0) {
+                armor--;
+                bursts.add(new Burst(x, z, 0xff63e9ff, .55f));
+                showStatus("ARMOR BLOCK", false, .8f);
+                return;
+            }
             squad = Math.max(0, squad - amount);
             bursts.add(new Burst(x, z, 0xffff506a, .55f));
             showStatus("-" + amount + " 仲間", true, .8f);
@@ -736,6 +808,11 @@ public final class Breakline3DView extends FrameLayout {
             s.barrels = barrels;
             s.enemies = enemies;
             s.resultCoins = resultCoins;
+            s.powerLevel = powerLevel;
+            s.recruitLevel = recruitLevel;
+            s.armorLevel = armorLevel;
+            s.combo = combo;
+            s.armor = armor;
             s.paused = paused;
             s.win = win;
             s.status = status;
@@ -1026,11 +1103,13 @@ public final class Breakline3DView extends FrameLayout {
         }
 
         private void drawPlayer(BattleModel state) {
-            int count = Math.min(5, state.squad);
+            int count = Math.min(9, state.squad);
             for (int i = 0; i < count; i++) {
-                float offset = (i - (count - 1) / 2f) * .82f;
+                int row = i / 3, col = i % 3;
+                int rowCount = Math.min(3, count - row * 3);
+                float offset = (col - (rowCount - 1) / 2f) * .78f;
                 float px = state.playerX + offset;
-                float pz = 3.8f - Math.abs(offset) * .18f;
+                float pz = 3.75f + row * .72f;
                 drawShadow(px, pz, .55f, .34f);
                 drawHumanoid(px, (float) Math.sin(state.time * 7f + i) * .025f, pz, .82f, 0xff1f679f, 0xffffbb66, true);
             }
