@@ -802,6 +802,8 @@ public final class Breakline3DView extends FrameLayout {
         private int modelLoc;
         private int colorLoc;
         private int lightLoc;
+        private int fogColorLoc;
+        private int cameraLoc;
         private long lastFrame;
         private int width;
         private int height;
@@ -819,6 +821,8 @@ public final class Breakline3DView extends FrameLayout {
             modelLoc = GLES20.glGetUniformLocation(program, "uModel");
             colorLoc = GLES20.glGetUniformLocation(program, "uColor");
             lightLoc = GLES20.glGetUniformLocation(program, "uLight");
+            fogColorLoc = GLES20.glGetUniformLocation(program, "uFogColor");
+            cameraLoc = GLES20.glGetUniformLocation(program, "uCamera");
             box = Mesh.box();
             cylinder = Mesh.cylinder(12);
             sphere = Mesh.sphere(10, 8);
@@ -848,11 +852,15 @@ public final class Breakline3DView extends FrameLayout {
             GLES20.glClearColor(Color.red(sky) / 255f, Color.green(sky) / 255f, Color.blue(sky) / 255f, 1f);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
             if (width == 0 || height == 0) return;
+            float cameraBob = state.mode == PLAYING ? (float) Math.sin(state.time * 3.2f) * .045f : 0f;
             float eyeX = state.playerX * .17f;
-            Matrix.setLookAtM(view, 0, eyeX, 6.1f, 11.4f, state.playerX * .06f, .35f, -17f, 0f, 1f, 0f);
+            float eyeY = 6.1f + cameraBob;
+            Matrix.setLookAtM(view, 0, eyeX, eyeY, 11.4f, state.playerX * .06f, .35f, -17f, 0f, 1f, 0f);
             Matrix.multiplyMM(vp, 0, projection, 0, view, 0);
             GLES20.glUseProgram(program);
             GLES20.glUniform3f(lightLoc, -.35f, .88f, .55f);
+            GLES20.glUniform3f(cameraLoc, eyeX, eyeY, 11.4f);
+            GLES20.glUniform3f(fogColorLoc, Color.red(sky) / 255f, Color.green(sky) / 255f, Color.blue(sky) / 255f);
 
             drawEnvironment(environment, state.time);
             if (state.mode == PLAYING || state.mode == RESULT) {
@@ -868,17 +876,38 @@ public final class Breakline3DView extends FrameLayout {
 
         private void drawEnvironment(int environment, float time) {
             int water = environment >= 2 ? 0x88366192 : 0x8849a7ca;
+            int horizon = environment == 3 ? 0xffec6da5 : environment == 1 ? 0xffffc37a : 0xffd6f3ff;
+            drawSphere(-10.5f, 10.5f, -58f, environment == 3 ? 2.6f : 3.8f, horizon);
+            for (int i = 0; i < 7; i++) {
+                float cloudX = -12f + i * 4.2f + (time * .10f % 4.2f);
+                float cloudY = 7.8f + (i % 3) * .65f;
+                float cloudZ = -42f - (i % 2) * 8f;
+                int cloud = environment >= 2 ? 0x553e5776 : 0x77eef7fa;
+                drawSphere(cloudX, cloudY, cloudZ, 1.25f, cloud);
+                drawSphere(cloudX + 1.05f, cloudY + .18f, cloudZ, .92f, cloud);
+                drawSphere(cloudX - .90f, cloudY - .12f, cloudZ, .78f, cloud);
+            }
             drawBox(-14f, -.6f, -25f, 20f, .08f, 68f, water);
             drawBox(14f, -.6f, -25f, 20f, .08f, 68f, water);
             for (int i = 0; i < 18; i++) {
                 float z = -52f + i * 4.2f + (time * 1.3f % 4.2f);
                 drawBox(-12f, -.49f, z, 5f, .012f, .07f, 0x88d7f6ff);
                 drawBox(12f, -.49f, z, 5f, .012f, .07f, 0x88d7f6ff);
+                drawBox(-9.2f, -.475f, z + 1.7f, 1.7f, .010f, .035f, 0x449fe7ff);
+                drawBox(9.2f, -.475f, z - 1.1f, 1.7f, .010f, .035f, 0x449fe7ff);
             }
             drawBox(0f, -.22f, -25f, 8.2f, .35f, 66f, environment == 3 ? 0xff323844 : 0xff5f676e);
+            drawBox(-4.02f, -.025f, -25f, .10f, .025f, 66f, 0xffffc84e);
+            drawBox(4.02f, -.025f, -25f, .10f, .025f, 66f, 0xffffc84e);
             for (int i = 0; i < 19; i++) {
                 float z = -53f + i * 3.4f;
                 drawBox(0f, -.01f, z, .18f, .025f, 1.0f, 0xffe7eceb);
+            }
+            for (int i = 0; i < 16; i++) {
+                float z = -51f + i * 4.1f;
+                float x = ((i * 37) % 7 - 3) * .82f;
+                drawBox(x, -.005f, z, .035f, .018f, .75f, 0xff454b50);
+                if ((i & 1) == 0) drawBox(x + .26f, -.004f, z + .35f, .48f, .018f, .035f, 0xff454b50);
             }
             for (float x : new float[] {-4.35f, 4.35f}) {
                 drawBox(x, .34f, -25f, .16f, .16f, 66f, 0xffb9c5c8);
@@ -896,9 +925,10 @@ public final class Breakline3DView extends FrameLayout {
                 int city = environment == 3 ? 0xff1f1b37 : environment >= 2 ? 0xff263a55 : 0xff54768c;
                 drawBox(leftX, h / 2f - .45f, z, 2.3f, h, 3.5f, city);
                 drawBox(rightX, (h * .78f) / 2f - .45f, z + 1.1f, 2.0f, h * .78f, 3.2f, city);
-                if (environment >= 2) {
-                    drawBox(leftX, h * .42f, z - 1.78f, 1.5f, .06f, .05f, 0xffffd166);
-                    drawBox(rightX, h * .30f, z - .55f, 1.3f, .06f, .05f, 0xffffd166);
+                for (int floor = 0; floor < 3; floor++) {
+                    int window = environment >= 2 ? 0xffffd166 : 0xffbdeaff;
+                    drawBox(leftX, .9f + floor * 1.25f, z - 1.78f, 1.45f, .13f, .05f, window);
+                    drawBox(rightX, .75f + floor * 1.05f, z - .55f, 1.22f, .12f, .05f, window);
                 }
             }
             for (int i = 0; i < 7; i++) {
@@ -934,10 +964,13 @@ public final class Breakline3DView extends FrameLayout {
         private void drawEntity(BattleModel.Entity e) {
             if (e.kind == BattleModel.BARREL) {
                 int[] colors = {0xff75f0b6, 0xffffd166, 0xfffb7185, 0xffa5f3fc};
+                drawShadow(e.x, e.z, .92f, .58f);
                 drawBarrel(e.x, e.z, 1f, colors[e.reward], Math.max(1, (int) Math.ceil(e.hp)));
             } else if (e.kind == BattleModel.ENEMY) {
+                drawShadow(e.x, e.z, e.subtype == BattleModel.HEAVY ? 1.15f : .62f, .38f);
                 drawEnemy(e.x, e.z, e.subtype, 1f + (float) Math.sin(e.phase * 5f) * .025f);
             } else {
+                drawShadow(e.x, e.z, 3.1f, 1.15f);
                 drawBoss(e);
             }
         }
@@ -986,8 +1019,15 @@ public final class Breakline3DView extends FrameLayout {
             int count = Math.min(5, state.squad);
             for (int i = 0; i < count; i++) {
                 float offset = (i - (count - 1) / 2f) * .82f;
-                drawHumanoid(state.playerX + offset, 0f, 3.8f - Math.abs(offset) * .18f, .82f, 0xff1f679f, 0xffffbb66, true);
+                float px = state.playerX + offset;
+                float pz = 3.8f - Math.abs(offset) * .18f;
+                drawShadow(px, pz, .55f, .34f);
+                drawHumanoid(px, (float) Math.sin(state.time * 7f + i) * .025f, pz, .82f, 0xff1f679f, 0xffffbb66, true);
             }
+        }
+
+        private void drawShadow(float x, float z, float radius, float depth) {
+            drawMesh(sphere, x + .20f, .015f, z + .18f, radius * 2f, .028f, depth * 2f, 0f, 0x57030a12);
         }
 
         private void drawHumanoid(float x, float y, float z, float scale, int suit, int skin, boolean armed) {
@@ -1018,6 +1058,8 @@ public final class Breakline3DView extends FrameLayout {
         private void drawBurst(BattleModel.Burst burst) {
             float progress = 1f - burst.life / Math.max(.01f, burst.maxLife);
             float radius = .2f + progress * 1.8f;
+            drawSphere(burst.x, .55f, burst.z, Math.max(.08f, .62f * (1f - progress)), burst.color);
+            drawCylinder(burst.x, .08f, burst.z, radius * .72f, .035f, 0x99ffd067);
             for (int i = 0; i < 9; i++) {
                 double a = i * Math.PI * 2d / 9d;
                 float x = burst.x + (float) Math.cos(a) * radius;
@@ -1102,18 +1144,29 @@ public final class Breakline3DView extends FrameLayout {
                 "uniform mat4 uModel;\n" +
                 "uniform vec4 uColor;\n" +
                 "uniform vec3 uLight;\n" +
+                "uniform vec3 uCamera;\n" +
                 "varying vec4 vColor;\n" +
+                "varying float vDistance;\n" +
                 "void main() {\n" +
                 "  vec3 n = normalize((uModel * vec4(aNormal, 0.0)).xyz);\n" +
                 "  float light = max(dot(n, normalize(uLight)), 0.0);\n" +
-                "  vColor = vec4(uColor.rgb * (0.30 + light * 0.70), uColor.a);\n" +
+                "  vec3 world = (uModel * vec4(aPosition, 1.0)).xyz;\n" +
+                "  vec3 viewDir = normalize(uCamera - world);\n" +
+                "  float rim = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);\n" +
+                "  vColor = vec4(uColor.rgb * (0.34 + light * 0.66) + rim * 0.10, uColor.a);\n" +
+                "  vDistance = distance(uCamera, world);\n" +
                 "  gl_Position = uMvp * vec4(aPosition, 1.0);\n" +
                 "}";
 
         private static final String FRAGMENT_SHADER =
                 "precision mediump float;\n" +
                 "varying vec4 vColor;\n" +
-                "void main() { gl_FragColor = vColor; }";
+                "varying float vDistance;\n" +
+                "uniform vec3 uFogColor;\n" +
+                "void main() {\n" +
+                "  float fog = smoothstep(31.0, 72.0, vDistance);\n" +
+                "  gl_FragColor = vec4(mix(vColor.rgb, uFogColor, fog), vColor.a);\n" +
+                "}";
     }
 
     private static final class Mesh {
