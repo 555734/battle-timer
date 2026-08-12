@@ -97,7 +97,8 @@ public final class GameView extends View {
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         width = w;
         height = h;
-        ui = Math.max(.75f, Math.min(w, 420f) / 360f);
+        float density = getResources().getDisplayMetrics().density;
+        ui = Math.max(.85f, Math.min(density, w / 320f));
     }
 
     @Override
@@ -156,14 +157,14 @@ public final class GameView extends View {
             if (target.kind == BOSS) {
                 updateBoss(target, dt);
             } else {
-                target.y += target.speed * dt;
+                target.y += target.speed * ui * dt;
             }
-            if (target.kind == ENEMY && target.y > playerY() - 75f) {
+            if (target.kind == ENEMY && target.y > playerY() - 75f * ui) {
                 float hitWidth = target.enemyType == HEAVY ? .28f : .22f;
                 if (Math.abs(target.lane - game.player.playerX) < hitWidth) hitPlayer(target);
                 else target.alive = false;
             }
-            if (target.kind == BARREL && target.y > playerY() - 68f) {
+            if (target.kind == BARREL && target.y > playerY() - 68f * ui) {
                 if (Math.abs(target.lane - game.player.playerX) < .24f) hitPlayer(target);
                 else target.alive = false;
             }
@@ -179,8 +180,8 @@ public final class GameView extends View {
                 float dx = tx - bullet.x;
                 float dy = bullet.target.y - bullet.y;
                 float distance = (float) Math.hypot(dx, dy);
-                float step = bullet.speed * dt;
-                if (distance <= step + 12f) {
+                float step = bullet.speed * ui * dt;
+                if (distance <= step + 12f * ui) {
                     bullet.target.hp -= bullet.damage;
                     burst(tx, bullet.target.y, bullet.color, 4);
                     if (bullet.target.hp <= 0f) destroyTarget(bullet.target);
@@ -202,14 +203,14 @@ public final class GameView extends View {
             p.life -= dt;
             p.x += p.vx * dt;
             p.y += p.vy * dt;
-            p.vy += 34f * dt;
+            p.vy += 34f * ui * dt;
             if (p.life <= 0f) particles.remove();
         }
         Iterator<FloatingText> texts = game.texts.iterator();
         while (texts.hasNext()) {
             FloatingText t = texts.next();
             t.life -= dt;
-            t.y -= 24f * dt;
+            t.y -= 24f * ui * dt;
             if (t.life <= 0f) texts.remove();
         }
         if (game.finishTimer <= 0f && game.bossDefeated) endStage(true);
@@ -264,10 +265,11 @@ public final class GameView extends View {
         stroke.setStrokeWidth(2f * ui);
         canvas.drawLine(topLeft, topY, bottomLeft, height, stroke);
         canvas.drawLine(topRight, topY, bottomRight, height, stroke);
-        float offset = game == null ? 0f : (game.time * 90f) % 120f;
+        float stripeGap = 120f * ui;
+        float offset = game == null ? 0f : (game.time * 90f * ui) % stripeGap;
         for (float lane : new float[] {.333f, .666f}) {
-            for (float y = topY + 4f - offset; y < height; y += 120f) {
-                float y2 = y + 52f;
+            for (float y = topY + 4f * ui - offset; y < height; y += stripeGap) {
+                float y2 = y + 52f * ui;
                 stroke.setColor(Color.argb(185, 238, 246, 248));
                 stroke.setStrokeWidth(Math.max(1f, y / height * 3f));
                 canvas.drawLine(roadX(y, lane), y, roadX(y2, lane), y2, stroke);
@@ -281,7 +283,8 @@ public final class GameView extends View {
         drawText(canvas, "OFFLINE SHOOTING RUNNER / NATIVE", x, height * .18f, 12f, 0xff67e8f9, true, false);
         drawText(canvas, "PROJECT", x, height * .29f, 48f, Color.WHITE, true, false);
         drawText(canvas, "BREAKLINE", x, height * .39f, 48f, 0xff3e9cff, true, false);
-        drawText(canvas, "左右に動き、樽を壊し、仲間と武器を増やして群れを突破する。", x, height * .47f, 14f, 0xffd6e4f4, false, false);
+        drawText(canvas, "左右に動き、樽を選び、隊列を強くする。", x, height * .47f, 13f, 0xffd6e4f4, false, false);
+        drawText(canvas, "群れを突破してボスを倒せ。", x, height * .505f, 13f, 0xffd6e4f4, false, false);
         float menuTop = height * .56f;
         drawButton(canvas, new RectF(x, menuTop, x + width * .48f, menuTop + 50f * ui), "開始", true);
         drawButton(canvas, new RectF(x, menuTop + 60f * ui, x + width * .48f, menuTop + 110f * ui), "永続強化", false);
@@ -443,7 +446,7 @@ public final class GameView extends View {
         float scale = Math.max(.55f, Math.min(1.45f, .55f + target.y / height * .75f));
         canvas.save();
         canvas.translate(x, target.y);
-        canvas.scale(scale, scale);
+        canvas.scale(scale * ui, scale * ui);
         if (target.kind == BARREL) drawBarrel(canvas, target);
         else if (target.kind == ENEMY) drawEnemy(canvas, target);
         else drawBoss(canvas, target);
@@ -496,10 +499,12 @@ public final class GameView extends View {
         stroke.setStrokeWidth(4f);
         canvas.drawLine(-21f, -15f, 21f, -15f, stroke);
         canvas.drawLine(-21f, 15f, 21f, 15f, stroke);
-        drawTextCentered(canvas, String.valueOf(Math.max(0, (int) Math.ceil(target.hp))), 0f, 6f, 18f, Color.WHITE, true);
+        drawLocalTextCentered(canvas, String.valueOf(Math.max(0, (int) Math.ceil(target.hp))), 0f, 6f, 18f, Color.WHITE, true);
         int rewardColor = target.reward == 0 ? 0xff75f0b6 : target.reward == 1 ? 0xffffd166 : target.reward == 2 ? 0xfffb7185 : 0xffa5f3fc;
+        String rewardLabel = new String[] {"ALLY", "DMG", "RATE", "GUN"}[target.reward];
+        drawLocalTextCentered(canvas, rewardLabel, 0f, -35f, 8f, rewardColor, true);
         paint.setColor(rewardColor);
-        canvas.drawCircle(0f, -32f, 5f, paint);
+        canvas.drawCircle(0f, -47f, 3f, paint);
     }
 
     private void drawEnemy(Canvas canvas, Target target) {
@@ -513,7 +518,7 @@ public final class GameView extends View {
         if (target.enemyType == HEAVY) {
             paint.setColor(0xff563440);
             canvas.drawRoundRect(new RectF(-23f, -5f, 23f, 12f), 6f, 6f, paint);
-            drawTextCentered(canvas, "H", 0f, 8f, 9f, 0xffffd6dc, true);
+            drawLocalTextCentered(canvas, "H", 0f, 8f, 9f, 0xffffd6dc, true);
         } else if (target.enemyType == RUNNER) {
             paint.setColor(0xffffc857);
             path.reset();
@@ -553,7 +558,7 @@ public final class GameView extends View {
         paint.setColor(0xffffe4a8);
         canvas.drawCircle(-11f, -28f, 4f, paint);
         canvas.drawCircle(11f, -28f, 4f, paint);
-        drawTextCentered(canvas, String.format(Locale.JAPAN, "%d / %d", (int) Math.ceil(target.hp), target.maxHp), 0f, -70f, 12f, Color.WHITE, true);
+        drawLocalTextCentered(canvas, String.format(Locale.JAPAN, "%d / %d", (int) Math.ceil(target.hp), target.maxHp), 0f, -70f, 12f, Color.WHITE, true);
         paint.setColor(0x99203953);
         canvas.drawRoundRect(new RectF(-54f, -60f, 54f, -55f), 3f, 3f, paint);
         paint.setColor(0xffff647d);
@@ -663,7 +668,7 @@ public final class GameView extends View {
                 if (Math.abs(game.player.playerX - boss.attackLane) < .23f) {
                     damageSquad(2, roadX(playerY(), boss.attackLane));
                 } else {
-                    addFloatingText(roadX(playerY(), game.player.playerX), playerY() - 65f, "DODGE", 0xff75f0b6);
+                    addFloatingText(roadX(playerY(), game.player.playerX), playerY() - 65f * ui, "DODGE", 0xff75f0b6);
                 }
                 game.shake = Math.max(game.shake, reduceMotion() ? .18f : .75f);
                 feedback(true);
@@ -678,10 +683,10 @@ public final class GameView extends View {
                 if (Math.abs(game.player.playerX - boss.safeLane) > .18f) {
                     damageSquad(1, roadX(playerY(), game.player.playerX));
                 } else {
-                    addFloatingText(roadX(playerY(), game.player.playerX), playerY() - 65f, "SAFE", 0xff75f0b6);
+                    addFloatingText(roadX(playerY(), game.player.playerX), playerY() - 65f * ui, "SAFE", 0xff75f0b6);
                 }
                 game.shake = Math.max(game.shake, reduceMotion() ? .18f : .9f);
-                burst(roadX(playerY(), game.player.playerX), playerY() - 24f, 0xffffb45c, 24);
+                burst(roadX(playerY(), game.player.playerX), playerY() - 24f * ui, 0xffffb45c, 24);
                 feedback(true);
             }
             if (boss.attackProgress >= duration) finishBossAttack(boss);
@@ -707,8 +712,8 @@ public final class GameView extends View {
         game.player.invulnerable = .42f;
         game.player.squad = Math.max(0, game.player.squad - amount);
         game.shake = Math.max(game.shake, reduceMotion() ? .12f : .65f);
-        burst(sourceX, playerY() - 15f, 0xffff647d, 16 + amount * 4);
-        addFloatingText(sourceX, playerY() - 60f, "-" + amount + " 仲間", 0xffff9aa9);
+        burst(sourceX, playerY() - 15f * ui, 0xffff647d, 16 + amount * 4);
+        addFloatingText(sourceX, playerY() - 60f * ui, "-" + amount + " 仲間", 0xffff9aa9);
         playTone(ToneGenerator.TONE_PROP_NACK, 120);
         feedback(true);
         if (game.player.squad <= 0) endStage(false);
@@ -725,7 +730,7 @@ public final class GameView extends View {
             game.barrelsBroken++;
             game.score += 5;
             String label = target.reward == 0 ? "+1 仲間" : target.reward == 1 ? "DAMAGE UP" : target.reward == 2 ? "RAPID FIRE" : "WEAPON UP";
-            addFloatingText(x, target.y - 25f, label, target.reward == 0 ? 0xff9ff6ce : 0xffffd36a);
+            addFloatingText(x, target.y - 25f * ui, label, target.reward == 0 ? 0xff9ff6ce : 0xffffd36a);
             burst(x, target.y, 0xffcaa16d, 20);
             if (target.reward == 0) game.player.squad++;
             else if (target.reward == 1) game.player.damage += .22f;
@@ -744,7 +749,7 @@ public final class GameView extends View {
             game.score += 60;
             game.shake = reduceMotion() ? .25f : 1f;
             burst(x, target.y, 0xffffd166, 45);
-            addFloatingText(x, target.y - 45f, "BOSS BREAK!", 0xfffff0a8);
+            addFloatingText(x, target.y - 45f * ui, "BOSS BREAK!", 0xfffff0a8);
             playTone(ToneGenerator.TONE_PROP_ACK, 260);
             feedback(true);
         }
@@ -774,7 +779,7 @@ public final class GameView extends View {
         float speed = game.config.enemySpeed + random.nextFloat() * 10f;
         if (type == RUNNER) speed *= 1.52f;
         else if (type == HEAVY) speed *= .64f;
-        game.targets.add(new Target(ENEMY, lane, height * .09f - random.nextFloat() * 26f,
+        game.targets.add(new Target(ENEMY, lane, height * .09f - random.nextFloat() * 26f * ui,
                 speed, hp, 0, type, -1));
     }
 
@@ -798,7 +803,7 @@ public final class GameView extends View {
         float centerX = roadX(playerY(), game.player.playerX);
         for (int i = 0; i < shooters; i++) {
             float offset = (i - (shooters - 1) / 2f) * 8f * ui;
-            game.bullets.add(new Bullet(centerX + offset, playerY() - 18f + Math.abs(offset) * .1f, target,
+            game.bullets.add(new Bullet(centerX + offset, playerY() - 18f * ui + Math.abs(offset) * .1f, target,
                     game.player.damage * damage[game.player.weapon], colors[game.player.weapon]));
         }
         game.player.playerFlash = .08f;
@@ -824,7 +829,7 @@ public final class GameView extends View {
         count = Math.min(count, available);
         for (int i = 0; i < count; i++) {
             double angle = random.nextDouble() * Math.PI * 2d;
-            float speed = 30f + random.nextFloat() * 150f;
+            float speed = (30f + random.nextFloat() * 150f) * ui;
             game.particles.add(new Particle(x, y, (float) Math.cos(angle) * speed, (float) Math.sin(angle) * speed,
                     .3f + random.nextFloat() * .45f, color, 1.5f + random.nextFloat() * 4f));
         }
@@ -1135,6 +1140,16 @@ public final class GameView extends View {
 
     private void drawTextCentered(Canvas canvas, String text, float x, float y, float size, int color, boolean bold) {
         drawText(canvas, text, x, y, size, color, bold, true);
+    }
+
+    private void drawLocalTextCentered(Canvas canvas, String text, float x, float y, float size, int color, boolean bold) {
+        paint.setShader(null);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setColor(color);
+        paint.setTextSize(size);
+        paint.setTypeface(android.graphics.Typeface.create("sans", bold ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL));
+        paint.setTextAlign(Paint.Align.CENTER);
+        canvas.drawText(text, x, y, paint);
     }
 
     private void drawTextCentered(Canvas canvas, String text, float x, float y, float size, int color, boolean bold, boolean unused) {
