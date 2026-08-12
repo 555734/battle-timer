@@ -1,50 +1,26 @@
-# Welcome to your Expo app 👋
+# PROJECT BREAKLINE — Android native MVP
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+HTMLではなく、Android SDKの標準`View`とJavaだけで作ったネイティブ版です。
 
-## Get started
+## 実装範囲
 
-1. Install dependencies
+- 縦画面固定、左右ドラッグによる隊列移動
+- 前方自動射撃、数字付き樽、4種の即時報酬
+- 仲間減少、敵3段階の縦スライス、ボス戦、勝敗画面
+- 3ステージ、端末内コイン、永続強化3項目
+- `SharedPreferences` によるローカル保存
+- 通信・ログイン・基地建設・PvP・広告・課金なし
+- `INTERNET`権限なし（完全オフライン）
 
-   ```bash
-   npm install
-   ```
+## 起動方法
 
-2. Start the app
+1. Android Studioでこの`native-android`フォルダを開く
+2. Android SDK Platform 35を選択してGradle Sync
+3. Android端末またはエミュレータを縦画面で起動
+4. `app`をRun
 
-   ```bash
-    npx expo start
-   ```
+最低対応APIは26です。リリースビルドはAndroid Studioの`Build > Generate App Bundles or APKs`から作成できます。
 
-In the output, you'll find options to open the app in a
+## 重要な設計判断
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+この版はコアゲームプレイの検証を優先したネイティブ縦スライスです。キャラクター、道路、敵、VFXはコード描画なので、次工程で独自アートと音へ置き換えます。ゲーム状態とローカル保存をJava側に集約しているため、MVPの仕様確認後に素材だけを差し替えられます。
