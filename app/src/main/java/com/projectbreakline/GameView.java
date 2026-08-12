@@ -128,6 +128,7 @@ public final class GameView extends View {
         if (screen != PLAYING || game == null || paused || game.ended) return;
         game.time += dt;
         game.shake = Math.max(0f, game.shake - dt * 3.5f);
+        game.flash = Math.max(0f, game.flash - dt * 2.8f);
         game.hint = Math.max(0f, game.hint - dt);
         game.player.playerFlash = Math.max(0f, game.player.playerFlash - dt);
         game.player.invulnerable = Math.max(0f, game.player.invulnerable - dt);
@@ -143,7 +144,7 @@ public final class GameView extends View {
         }
         int activeEnemies = 0;
         for (Target target : game.targets) if (target.alive && target.kind == ENEMY) activeEnemies++;
-        if (!game.bossSpawned && game.spawnEnemy <= 0f && activeEnemies < 60) {
+        if (!game.bossSpawned && game.spawnEnemy <= 0f && activeEnemies < 80) {
             spawnEnemy();
             game.spawnEnemy = game.config.enemyRate;
         }
@@ -154,6 +155,7 @@ public final class GameView extends View {
 
         for (Target target : game.targets) {
             if (!target.alive) continue;
+            if (target.kind != BOSS) target.phase += dt;
             if (target.kind == BOSS) {
                 updateBoss(target, dt);
             } else {
@@ -217,6 +219,13 @@ public final class GameView extends View {
         if (game.time > game.config.duration + 18f && !game.bossDefeated) endStage(false);
     }
 
+    private void drawWorldFlash(Canvas canvas) {
+        if (game == null || game.flash <= 0f) return;
+        int alpha = (int) (Math.min(1f, game.flash) * 115f);
+        paint.setColor(Color.argb(alpha, 255, 191, 92));
+        canvas.drawRect(0f, 0f, width, height, paint);
+    }
+
     private void drawWorld(Canvas canvas) {
         drawBackground(canvas);
         drawRoad(canvas);
@@ -227,6 +236,7 @@ public final class GameView extends View {
             if (screen == PLAYING || screen == RESULT) drawPlayer(canvas);
             for (Particle particle : game.particles) drawParticle(canvas, particle);
             for (FloatingText text : game.texts) drawFloatingText(canvas, text);
+            drawWorldFlash(canvas);
         }
     }
 
@@ -238,12 +248,72 @@ public final class GameView extends View {
                 sky[Math.min(3, environment)], horizon[Math.min(3, environment)], android.graphics.Shader.TileMode.CLAMP));
         canvas.drawRect(0f, 0f, width, height, paint);
         paint.setShader(null);
-        paint.setColor(Color.argb(28, 255, 255, 255));
-        float shift = game == null ? 0f : (game.time * 9f) % height;
-        for (int i = 0; i < 14; i++) {
-            float y = (i * 53f + shift) % height;
-            canvas.drawRect(0f, y, width * .28f, 1f, paint);
-            canvas.drawRect(width * .72f, y + 24f, width, y + 25f, paint);
+        drawHorizonBackdrop(canvas, environment);
+        drawSideWater(canvas, environment);
+        if (environment == 3) {
+            paint.setColor(0x55dbeafe);
+            canvas.drawCircle(width * .78f, height * .105f, 30f * ui, paint);
+            paint.setColor(0xfff2e8cf);
+            canvas.drawCircle(width * .78f, height * .105f, 17f * ui, paint);
+        }
+    }
+
+    private void drawHorizonBackdrop(Canvas canvas, int environment) {
+        float horizon = height * .125f;
+        if (environment >= 2) {
+            int[] buildingColors = {0x55364c68, 0x6644556b, 0x77516278, 0x66402e50};
+            for (int i = 0; i < 14; i++) {
+                float x = i < 7 ? i * width * .075f - width * .03f : width * .67f + (i - 7) * width * .075f;
+                float buildingHeight = (22f + ((i * 17) % 56)) * ui;
+                float w = (24f + ((i * 11) % 24)) * ui;
+                paint.setColor(buildingColors[Math.min(3, environment)]);
+                canvas.drawRect(x, horizon - buildingHeight, x + w, horizon + 2f * ui, paint);
+                paint.setColor(0x66ffe29a);
+                for (float wy = horizon - buildingHeight + 9f * ui; wy < horizon - 5f * ui; wy += 12f * ui) {
+                    canvas.drawRect(x + 5f * ui, wy, x + 8f * ui, wy + 4f * ui, paint);
+                    if (w > 30f * ui) canvas.drawRect(x + w - 10f * ui, wy, x + w - 7f * ui, wy + 4f * ui, paint);
+                }
+            }
+        } else {
+            paint.setColor(0x664e7190);
+            canvas.drawOval(new RectF(-width * .24f, horizon - 25f * ui, width * .34f, horizon + 18f * ui), paint);
+            canvas.drawOval(new RectF(width * .68f, horizon - 27f * ui, width * 1.25f, horizon + 18f * ui), paint);
+        }
+        paint.setColor(environment == 3 ? 0x5534d399 : 0x44ffffff);
+        canvas.drawRect(0f, horizon, width, horizon + 3f * ui, paint);
+    }
+
+    private void drawSideWater(Canvas canvas, int environment) {
+        float top = height * .125f;
+        float leftTop = roadBounds(top, true);
+        float rightTop = roadBounds(top, false);
+        float leftBottom = roadBounds(height, true);
+        float rightBottom = roadBounds(height, false);
+        int water = environment >= 2 ? 0x66121930 : environment == 1 ? 0x66436f91 : 0x664088aa;
+        path.reset();
+        path.moveTo(0f, top);
+        path.lineTo(leftTop, top);
+        path.lineTo(leftBottom, height);
+        path.lineTo(0f, height);
+        path.close();
+        paint.setColor(water);
+        canvas.drawPath(path, paint);
+        path.reset();
+        path.moveTo(rightTop, top);
+        path.lineTo(width, top);
+        path.lineTo(width, height);
+        path.lineTo(rightBottom, height);
+        path.close();
+        canvas.drawPath(path, paint);
+        stroke.setStrokeWidth(Math.max(1f, ui));
+        stroke.setColor(environment == 3 ? 0x5538bdf8 : 0x66d8f5ff);
+        float scroll = game == null ? 0f : (game.time * 23f * ui) % (46f * ui);
+        for (float y = top + scroll; y < height; y += 46f * ui) {
+            float inset = (y - top) / Math.max(1f, height - top);
+            float lx = lerp(3f, leftBottom - 12f * ui, inset);
+            float rx = lerp(width - 3f, rightBottom + 12f * ui, inset);
+            canvas.drawLine(lx, y, Math.min(leftTop - 8f * ui, lx + 26f * ui), y + 3f * ui, stroke);
+            canvas.drawLine(Math.max(rightTop + 8f * ui, rx - 26f * ui), y + 3f * ui, rx, y, stroke);
         }
     }
 
@@ -259,12 +329,16 @@ public final class GameView extends View {
         path.lineTo(bottomRight, height);
         path.lineTo(bottomLeft, height);
         path.close();
-        paint.setColor(Color.rgb(115, 122, 129));
+        paint.setShader(new android.graphics.LinearGradient(0f, topY, 0f, height,
+                0xff87919a, 0xff636b73, android.graphics.Shader.TileMode.CLAMP));
         canvas.drawPath(path, paint);
+        paint.setShader(null);
+        drawRoadTexture(canvas, topY);
         stroke.setColor(Color.argb(120, 238, 246, 248));
         stroke.setStrokeWidth(2f * ui);
         canvas.drawLine(topLeft, topY, bottomLeft, height, stroke);
         canvas.drawLine(topRight, topY, bottomRight, height, stroke);
+        drawBridgeRailings(canvas, topY);
         float stripeGap = 120f * ui;
         float offset = game == null ? 0f : (game.time * 90f * ui) % stripeGap;
         for (float lane : new float[] {.333f, .666f}) {
@@ -274,6 +348,46 @@ public final class GameView extends View {
                 stroke.setStrokeWidth(Math.max(1f, y / height * 3f));
                 canvas.drawLine(roadX(y, lane), y, roadX(y2, lane), y2, stroke);
             }
+        }
+    }
+
+    private void drawRoadTexture(Canvas canvas, float topY) {
+        int environment = game == null ? 0 : game.config.environment;
+        paint.setColor(environment >= 2 ? 0x183a4654 : 0x1a394852);
+        float scroll = game == null ? 0f : (game.time * 30f * ui) % (180f * ui);
+        for (int i = 0; i < 10; i++) {
+            float y = topY + ((i * 83f * ui + scroll) % Math.max(1f, height - topY));
+            float lane = ((i * 37) % 100) / 100f;
+            float x = roadX(y, lane);
+            float w = (10f + (i % 3) * 9f) * ui;
+            canvas.drawRoundRect(new RectF(x - w, y, x + w, y + (2f + i % 3) * ui), 3f * ui, 3f * ui, paint);
+        }
+        stroke.setColor(0x263e4a55);
+        for (int i = 0; i < 7; i++) {
+            float y = topY + 90f * ui + i * 112f * ui;
+            float x = roadX(y, .18f + (i % 4) * .19f);
+            stroke.setStrokeWidth((1f + i % 2) * ui);
+            canvas.drawLine(x, y, x + 15f * ui, y + 5f * ui, stroke);
+            canvas.drawLine(x + 15f * ui, y + 5f * ui, x + 28f * ui, y + 2f * ui, stroke);
+        }
+    }
+
+    private void drawBridgeRailings(Canvas canvas, float topY) {
+        stroke.setColor(0xffc0c9cb);
+        stroke.setStrokeWidth(3f * ui);
+        canvas.drawLine(roadBounds(topY, true) - 5f * ui, topY, roadBounds(height, true) - 5f * ui, height);
+        canvas.drawLine(roadBounds(topY, false) + 5f * ui, topY, roadBounds(height, false) + 5f * ui, height);
+        for (float y = topY + 22f * ui; y < height; y += 48f * ui) {
+            float inset = clamp((y - topY) / Math.max(1f, height - topY), 0f, 1f);
+            float postH = lerp(9f, 23f, inset) * ui;
+            stroke.setStrokeWidth(2f * ui);
+            float lx = roadBounds(y, true) - 5f * ui;
+            float rx = roadBounds(y, false) + 5f * ui;
+            canvas.drawLine(lx, y - postH, lx, y + 2f * ui, stroke);
+            canvas.drawLine(rx, y - postH, rx, y + 2f * ui, stroke);
+            paint.setColor(0xffd4dbda);
+            canvas.drawCircle(lx, y - postH, 2.5f * ui, paint);
+            canvas.drawCircle(rx, y - postH, 2.5f * ui, paint);
         }
     }
 
@@ -444,6 +558,11 @@ public final class GameView extends View {
     private void drawTarget(Canvas canvas, Target target) {
         float x = roadX(target.y, target.lane);
         float scale = Math.max(.55f, Math.min(1.45f, .55f + target.y / height * .75f));
+        paint.setColor(0x450b1722);
+        float shadowWidth = target.kind == BOSS ? 92f : target.kind == BARREL ? 48f : 30f;
+        float shadowHeight = target.kind == BOSS ? 13f : target.kind == BARREL ? 8f : 5f;
+        canvas.drawOval(new RectF(x - shadowWidth * scale * ui, target.y + 18f * scale * ui,
+                x + shadowWidth * scale * ui, target.y + (18f + shadowHeight) * scale * ui), paint);
         canvas.save();
         canvas.translate(x, target.y);
         canvas.scale(scale * ui, scale * ui);
@@ -491,20 +610,75 @@ public final class GameView extends View {
 
     private void drawBarrel(Canvas canvas, Target target) {
         RectF body = new RectF(-26f, -23f, 26f, 23f);
-        paint.setColor(0xff8d592f);
+        paint.setColor(0xff71421f);
         canvas.drawRoundRect(body, 8f, 8f, paint);
+        paint.setColor(0xff9d6332);
+        canvas.drawOval(new RectF(-26f, -23f, -18f, 23f), paint);
+        canvas.drawOval(new RectF(18f, -23f, 26f, 23f), paint);
         paint.setColor(0xffba7b43);
         canvas.drawRoundRect(new RectF(-22f, -19f, 22f, 19f), 6f, 6f, paint);
         stroke.setColor(0xff3d2418);
         stroke.setStrokeWidth(4f);
         canvas.drawLine(-21f, -15f, 21f, -15f, stroke);
         canvas.drawLine(-21f, 15f, 21f, 15f, stroke);
-        drawLocalTextCentered(canvas, String.valueOf(Math.max(0, (int) Math.ceil(target.hp))), 0f, 6f, 18f, Color.WHITE, true);
+        stroke.setStrokeWidth(3f);
+        stroke.setColor(0xff24150f);
+        paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTypeface(android.graphics.Typeface.create("sans", android.graphics.Typeface.BOLD));
+        paint.setTextSize(20f);
+        canvas.drawText(String.valueOf(Math.max(0, (int) Math.ceil(target.hp))), 0f, 7f, stroke);
+        paint.setColor(Color.WHITE);
+        canvas.drawText(String.valueOf(Math.max(0, (int) Math.ceil(target.hp))), 0f, 7f, paint);
         int rewardColor = target.reward == 0 ? 0xff75f0b6 : target.reward == 1 ? 0xffffd166 : target.reward == 2 ? 0xfffb7185 : 0xffa5f3fc;
         String rewardLabel = new String[] {"ALLY", "DMG", "RATE", "GUN"}[target.reward];
         drawLocalTextCentered(canvas, rewardLabel, 0f, -35f, 8f, rewardColor, true);
-        paint.setColor(rewardColor);
-        canvas.drawCircle(0f, -47f, 3f, paint);
+        drawRewardIcon(canvas, target.reward, 0f, -54f, rewardColor);
+    }
+
+    private void drawRewardIcon(Canvas canvas, int reward, float x, float y, int color) {
+        stroke.setColor(color);
+        stroke.setStrokeWidth(3f);
+        stroke.setStrokeCap(Paint.Cap.ROUND);
+        if (reward == 0) {
+            paint.setColor(color);
+            canvas.drawCircle(x, y - 7f, 5f, paint);
+            canvas.drawRoundRect(new RectF(x - 6f, y, x + 6f, y + 13f), 3f, 3f, paint);
+            canvas.drawLine(x - 9f, y + 3f, x - 14f, y + 9f, stroke);
+            canvas.drawLine(x + 9f, y + 3f, x + 14f, y + 9f, stroke);
+        } else if (reward == 1) {
+            path.reset();
+            path.moveTo(x - 21f, y + 8f);
+            path.lineTo(x + 14f, y - 9f);
+            path.lineTo(x + 22f, y - 2f);
+            path.lineTo(x - 14f, y + 14f);
+            path.close();
+            paint.setColor(0x66243d4b);
+            canvas.drawPath(path, paint);
+            canvas.drawPath(path, stroke);
+            canvas.drawLine(x - 7f, y + 7f, x + 3f, y + 17f, stroke);
+        } else if (reward == 2) {
+            canvas.drawLine(x - 24f, y + 3f, x + 21f, y + 3f, stroke);
+            canvas.drawLine(x + 9f, y + 3f, x + 18f, y - 11f, stroke);
+            canvas.drawLine(x - 16f, y + 3f, x - 24f, y + 12f, stroke);
+            canvas.drawLine(x - 2f, y + 3f, x - 6f, y + 14f, stroke);
+            canvas.drawCircle(x - 12f, y + 12f, 4f, stroke);
+            canvas.drawCircle(x + 12f, y + 12f, 4f, stroke);
+        } else {
+            path.reset();
+            path.moveTo(x - 22f, y + 10f);
+            path.lineTo(x - 16f, y - 3f);
+            path.lineTo(x + 12f, y - 3f);
+            path.lineTo(x + 22f, y + 8f);
+            path.lineTo(x + 18f, y + 14f);
+            path.lineTo(x - 20f, y + 14f);
+            path.close();
+            paint.setColor(0x77203c4a);
+            canvas.drawPath(path, paint);
+            canvas.drawPath(path, stroke);
+            paint.setColor(color);
+            canvas.drawCircle(x - 12f, y + 14f, 4f, paint);
+            canvas.drawCircle(x + 13f, y + 14f, 4f, paint);
+        }
     }
 
     private void drawEnemy(Canvas canvas, Target target) {
@@ -513,6 +687,8 @@ public final class GameView extends View {
         int skin = target.enemyType == HEAVY ? 0xff8e5360 : target.enemyType == RUNNER ? 0xffd8b56f : 0xff9ba9ad;
         paint.setColor(target.enemyType == HEAVY ? 0xff4c2332 : 0xff283541);
         canvas.drawCircle(0f, -18f, target.enemyType == HEAVY ? 13f : 10f, paint);
+        paint.setColor(target.enemyType == RUNNER ? 0xff594034 : 0xff422f32);
+        canvas.drawOval(new RectF(-11f, -29f, 11f, -13f), paint);
         paint.setColor(skin);
         canvas.drawRoundRect(new RectF(-bodyWidth, -9f, bodyWidth, bodyHeight), 8f, 8f, paint);
         if (target.enemyType == HEAVY) {
@@ -530,11 +706,15 @@ public final class GameView extends View {
         }
         stroke.setColor(0xff1b2530);
         stroke.setStrokeWidth(5f);
+        float walk = (float) Math.sin(target.phase * (target.enemyType == RUNNER ? 10f : 6f)) * 5f;
         float stride = target.enemyType == RUNNER ? 25f : 18f;
-        canvas.drawLine(-9f, 7f, -stride, 29f, stroke);
-        canvas.drawLine(9f, 7f, stride, 29f, stroke);
-        canvas.drawLine(-8f, 2f, -21f, 13f, stroke);
-        canvas.drawLine(8f, 2f, 21f, 13f, stroke);
+        canvas.drawLine(-9f, 7f, -stride, 29f + walk, stroke);
+        canvas.drawLine(9f, 7f, stride, 29f - walk, stroke);
+        canvas.drawLine(-8f, 2f, -21f, 13f - walk, stroke);
+        canvas.drawLine(8f, 2f, 21f, 13f + walk, stroke);
+        paint.setColor(0xff6e252f);
+        canvas.drawCircle(-5f, -17f, 2f, paint);
+        canvas.drawCircle(5f, -17f, 2f, paint);
         paint.setColor(0xffff647d);
         canvas.drawCircle(0f, -18f, 3f, paint);
         if (target.enemyType == HEAVY) {
@@ -549,15 +729,25 @@ public final class GameView extends View {
         canvas.drawCircle(0f, 0f, 76f + (float) Math.sin(target.phase * 7f) * 5f, paint);
         paint.setColor(0xffd99c8c);
         canvas.drawOval(new RectF(-55f, -38f, 55f, 46f), paint);
+        paint.setColor(0xffb8796d);
+        canvas.drawOval(new RectF(-36f, 5f, 36f, 47f), paint);
         paint.setColor(0xff9f635f);
         canvas.drawCircle(0f, -25f, 31f, paint);
+        paint.setColor(0xff6f3f46);
+        canvas.drawCircle(-21f, -33f, 12f, paint);
+        canvas.drawCircle(21f, -33f, 12f, paint);
         stroke.setColor(0xff5a3437);
         stroke.setStrokeWidth(10f);
         canvas.drawLine(-35f, 15f, -62f, 43f, stroke);
         canvas.drawLine(35f, 15f, 62f, 43f, stroke);
+        stroke.setStrokeWidth(5f);
+        canvas.drawLine(-43f, 25f, -72f, 16f, stroke);
+        canvas.drawLine(43f, 25f, 72f, 16f, stroke);
         paint.setColor(0xffffe4a8);
         canvas.drawCircle(-11f, -28f, 4f, paint);
         canvas.drawCircle(11f, -28f, 4f, paint);
+        paint.setColor(0xff3d2025);
+        canvas.drawOval(new RectF(-18f, -7f, 18f, 2f), paint);
         drawLocalTextCentered(canvas, String.format(Locale.JAPAN, "%d / %d", (int) Math.ceil(target.hp), target.maxHp), 0f, -70f, 12f, Color.WHITE, true);
         paint.setColor(0x99203953);
         canvas.drawRoundRect(new RectF(-54f, -60f, 54f, -55f), 3f, 3f, paint);
@@ -566,9 +756,13 @@ public final class GameView extends View {
     }
 
     private void drawBullet(Canvas canvas, Bullet bullet) {
+        paint.setColor(Color.argb(110, Color.red(bullet.color), Color.green(bullet.color), Color.blue(bullet.color)));
+        canvas.drawCircle(bullet.x, bullet.y, 7f * ui, paint);
         stroke.setColor(bullet.color);
         stroke.setStrokeWidth(3f * ui);
         canvas.drawLine(bullet.x, bullet.y + 12f * ui, bullet.x, bullet.y - 14f * ui, stroke);
+        stroke.setStrokeWidth(1f * ui);
+        canvas.drawLine(bullet.x - 4f * ui, bullet.y + 7f * ui, bullet.x + 4f * ui, bullet.y - 8f * ui, stroke);
     }
 
     private void drawPlayer(Canvas canvas) {
@@ -577,6 +771,8 @@ public final class GameView extends View {
         float y = playerY();
         canvas.save();
         canvas.translate(x, y);
+        paint.setColor(0x50070d15);
+        canvas.drawOval(new RectF(-62f * ui, 31f * ui, 62f * ui, 49f * ui), paint);
         if (game.player.invulnerable > 0f && ((int) (game.player.invulnerable * 20f) % 2 == 0)) canvas.scale(.92f, .92f);
         int count = Math.min(game.player.squad, 5);
         for (int i = 0; i < count; i++) {
@@ -591,17 +787,27 @@ public final class GameView extends View {
     }
 
     private void drawSoldier(Canvas canvas, float x, float y) {
-        paint.setColor(0xff1e4e80);
-        canvas.drawRoundRect(new RectF(x - 10f * ui, y - 3f * ui, x + 10f * ui, y + 30f * ui), 6f * ui, 6f * ui, paint);
-        paint.setColor(0xffffc36b);
-        canvas.drawCircle(x, y - 13f * ui, 10f * ui, paint);
+        float bob = (float) Math.sin(game == null ? 0f : game.time * 7f + x * .02f) * ui;
+        paint.setColor(0xff173e69);
+        canvas.drawRoundRect(new RectF(x - 12f * ui, y - 2f * ui + bob, x + 12f * ui, y + 31f * ui + bob), 6f * ui, 6f * ui, paint);
+        paint.setColor(0xff2b6c9f);
+        canvas.drawRoundRect(new RectF(x - 9f * ui, y + 1f * ui + bob, x + 9f * ui, y + 22f * ui + bob), 4f * ui, 4f * ui, paint);
+        paint.setColor(0xffffbd65);
+        canvas.drawCircle(x, y - 13f * ui + bob, 10f * ui, paint);
+        paint.setColor(0xffd68a3d);
+        canvas.drawOval(new RectF(x - 10f * ui, y - 22f * ui + bob, x + 10f * ui, y - 13f * ui + bob), paint);
         paint.setColor(0xff193146);
-        canvas.drawRoundRect(new RectF(x - 12f * ui, y - 21f * ui, x + 12f * ui, y - 14f * ui), 4f * ui, 4f * ui, paint);
+        canvas.drawRoundRect(new RectF(x - 13f * ui, y - 21f * ui + bob, x + 13f * ui, y - 14f * ui + bob), 4f * ui, 4f * ui, paint);
+        drawLocalTextCentered(canvas, "FIB", x, y + 15f * ui + bob, 5f, 0xffd9f1ff, true);
         stroke.setColor(0xff1c2c3b);
         stroke.setStrokeWidth(4f * ui);
-        canvas.drawLine(x - 5f * ui, y + 27f * ui, x - 10f * ui, y + 38f * ui, stroke);
-        canvas.drawLine(x + 5f * ui, y + 27f * ui, x + 10f * ui, y + 38f * ui, stroke);
-        canvas.drawLine(x + 10f * ui, y + 5f * ui, x + 24f * ui, y - 9f * ui, stroke);
+        canvas.drawLine(x - 5f * ui, y + 27f * ui + bob, x - 10f * ui, y + 39f * ui + bob, stroke);
+        canvas.drawLine(x + 5f * ui, y + 27f * ui + bob, x + 10f * ui, y + 39f * ui + bob, stroke);
+        canvas.drawLine(x + 10f * ui, y + 5f * ui + bob, x + 26f * ui, y - 10f * ui + bob, stroke);
+        stroke.setColor(0xff607785);
+        stroke.setStrokeWidth(3f * ui);
+        canvas.drawLine(x + 22f * ui, y - 14f * ui + bob, x + 34f * ui, y - 24f * ui + bob, stroke);
+        canvas.drawLine(x + 28f * ui, y - 19f * ui + bob, x + 39f * ui, y - 19f * ui + bob, stroke);
     }
 
     private void drawParticle(Canvas canvas, Particle p) {
@@ -737,17 +943,20 @@ public final class GameView extends View {
             else if (target.reward == 2) game.player.fireInterval = Math.max(.095f, game.player.fireInterval * .86f);
             else game.player.weapon = Math.min(3, game.player.weapon + 1);
             game.shake = Math.max(game.shake, .22f);
+            game.flash = Math.max(game.flash, .24f);
             playTone(ToneGenerator.TONE_PROP_ACK, 90);
             feedback(false);
         } else if (target.kind == ENEMY) {
             game.enemiesDefeated++;
             game.score += target.enemyType == HEAVY ? 24 : target.enemyType == RUNNER ? 14 : 10;
             burst(x, target.y, target.enemyType == HEAVY ? 0xffffa0b2 : 0xffff7b8e, target.enemyType == HEAVY ? 20 : 11);
+            game.flash = Math.max(game.flash, target.enemyType == HEAVY ? .24f : .10f);
         } else {
             game.bossDefeated = true;
             game.finishTimer = .8f;
             game.score += 60;
             game.shake = reduceMotion() ? .25f : 1f;
+            game.flash = 1f;
             burst(x, target.y, 0xffffd166, 45);
             addFloatingText(x, target.y - 45f * ui, "BOSS BREAK!", 0xfffff0a8);
             playTone(ToneGenerator.TONE_PROP_ACK, 260);
@@ -769,18 +978,21 @@ public final class GameView extends View {
     }
 
     private void spawnEnemy() {
-        float lane = random.nextInt(3) / 2f;
-        float roll = random.nextFloat();
-        int type = WALKER;
-        if (game.stage >= 7 && roll < .22f) type = HEAVY;
-        else if (game.stage >= 4 && roll < .55f) type = RUNNER;
-        float baseHp = 1f + game.stage * .34f;
-        float hp = type == HEAVY ? baseHp * 3.1f : type == RUNNER ? Math.max(1f, baseHp * .72f) : baseHp;
-        float speed = game.config.enemySpeed + random.nextFloat() * 10f;
-        if (type == RUNNER) speed *= 1.52f;
-        else if (type == HEAVY) speed *= .64f;
-        game.targets.add(new Target(ENEMY, lane, height * .09f - random.nextFloat() * 26f * ui,
-                speed, hp, 0, type, -1));
+        int waveSize = game.stage >= 9 ? 3 : game.stage >= 3 ? 2 : 1;
+        for (int wave = 0; wave < waveSize; wave++) {
+            float lane = random.nextInt(3) / 2f;
+            float roll = random.nextFloat();
+            int type = WALKER;
+            if (game.stage >= 7 && roll < .22f) type = HEAVY;
+            else if (game.stage >= 4 && roll < .55f) type = RUNNER;
+            float baseHp = 1f + game.stage * .34f;
+            float hp = type == HEAVY ? baseHp * 3.1f : type == RUNNER ? Math.max(1f, baseHp * .72f) : baseHp;
+            float speed = game.config.enemySpeed + random.nextFloat() * 10f;
+            if (type == RUNNER) speed *= 1.52f;
+            else if (type == HEAVY) speed *= .64f;
+            float y = height * .09f - wave * 34f * ui - random.nextFloat() * 26f * ui;
+            game.targets.add(new Target(ENEMY, lane, y, speed, hp, 0, type, -1));
+        }
     }
 
     private void spawnBoss() {
