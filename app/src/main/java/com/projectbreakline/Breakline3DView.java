@@ -3,12 +3,15 @@ package com.projectbreakline;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.opengl.GLES20;
+import android.opengl.GLUtils;
 import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
 import android.os.SystemClock;
@@ -883,6 +886,10 @@ public final class Breakline3DView extends FrameLayout {
     }
 
     private static final class WorldRenderer implements GLSurfaceView.Renderer {
+        private static final int MAT_ROAD = 0;
+        private static final int MAT_BARREL = 1;
+        private static final int MAT_SUIT = 2;
+        private static final int MAT_ENEMY = 3;
         private final Breakline3DView host;
         private final float[] projection = new float[16];
         private final float[] view = new float[16];
@@ -901,6 +908,10 @@ public final class Breakline3DView extends FrameLayout {
         private int lightLoc;
         private int fogColorLoc;
         private int cameraLoc;
+        private int textureLoc;
+        private int textureMixLoc;
+        private int uvRectLoc;
+        private int materialTexture;
         private long lastFrame;
         private int width;
         private int height;
@@ -920,6 +931,12 @@ public final class Breakline3DView extends FrameLayout {
             lightLoc = GLES20.glGetUniformLocation(program, "uLight");
             fogColorLoc = GLES20.glGetUniformLocation(program, "uFogColor");
             cameraLoc = GLES20.glGetUniformLocation(program, "uCamera");
+            textureLoc = GLES20.glGetUniformLocation(program, "uTexture");
+            textureMixLoc = GLES20.glGetUniformLocation(program, "uTextureMix");
+            uvRectLoc = GLES20.glGetUniformLocation(program, "uUvRect");
+            materialTexture = loadMaterialAtlas();
+            GLES20.glUseProgram(program);
+            GLES20.glUniform1i(textureLoc, 0);
             box = Mesh.box();
             cylinder = Mesh.cylinder(12);
             sphere = Mesh.sphere(10, 8);
@@ -993,7 +1010,7 @@ public final class Breakline3DView extends FrameLayout {
                 drawBox(-9.2f, -.475f, z + 1.7f, 1.7f, .010f, .035f, 0x449fe7ff);
                 drawBox(9.2f, -.475f, z - 1.1f, 1.7f, .010f, .035f, 0x449fe7ff);
             }
-            drawBox(0f, -.22f, -25f, 8.2f, .35f, 66f, environment == 3 ? 0xff323844 : 0xff5f676e);
+            drawTexturedBox(0f, -.22f, -25f, 8.2f, .35f, 66f, environment == 3 ? 0xff323844 : 0xff5f676e, MAT_ROAD);
             drawBox(-4.02f, -.025f, -25f, .10f, .025f, 66f, 0xffffc84e);
             drawBox(4.02f, -.025f, -25f, .10f, .025f, 66f, 0xffffc84e);
             for (int i = 0; i < 19; i++) {
@@ -1073,7 +1090,7 @@ public final class Breakline3DView extends FrameLayout {
         }
 
         private void drawBarrel(float x, float z, float scale, int rewardColor, int hp) {
-            drawCylinder(x, .55f * scale, z, .78f * scale, 1.1f * scale, 0xffa46634);
+            drawTexturedCylinder(x, .55f * scale, z, .78f * scale, 1.1f * scale, 0xffffffff, MAT_BARREL);
             drawCylinder(x, .19f * scale, z, .84f * scale, .12f * scale, 0xff3f271c);
             drawCylinder(x, .91f * scale, z, .84f * scale, .12f * scale, 0xff3f271c);
             drawCylinder(x, 1.19f * scale, z, .20f * scale, .10f * scale, rewardColor);
@@ -1102,8 +1119,8 @@ public final class Breakline3DView extends FrameLayout {
 
         private void drawBoss(BattleModel.Entity e) {
             float sway = (float) Math.sin(e.phase * 2.5f) * .18f;
-            drawBox(e.x, 1.25f, e.z, 3.7f, 2.5f, 1.8f, 0xffa96f69);
-            drawSphere(e.x, 3.25f + sway, e.z + .15f, 1.28f, 0xffc88a7e);
+            drawTexturedBox(e.x, 1.25f, e.z, 3.7f, 2.5f, 1.8f, 0xffffffff, MAT_ENEMY);
+            drawTexturedSphere(e.x, 3.25f + sway, e.z + .15f, 1.28f, 0xffffffff, MAT_ENEMY);
             drawBox(e.x - 2.35f, 1.45f, e.z, .75f, 1.0f, 1.0f, 0xff8b5858);
             drawBox(e.x + 2.35f, 1.45f, e.z, .75f, 1.0f, 1.0f, 0xff8b5858);
             drawBox(e.x - 1.15f, .20f, e.z, .80f, .45f, .9f, 0xff784552);
@@ -1130,13 +1147,15 @@ public final class Breakline3DView extends FrameLayout {
         }
 
         private void drawHumanoid(float x, float y, float z, float scale, int suit, int skin, boolean armed) {
-            drawBox(x, y + .82f * scale, z, .72f * scale, 1.28f * scale, .42f * scale, suit);
-            drawSphere(x, y + 1.76f * scale, z, .37f * scale, skin);
+            int bodyMaterial = armed ? MAT_SUIT : MAT_ENEMY;
+            drawTexturedBox(x, y + .82f * scale, z, .72f * scale, 1.28f * scale, .42f * scale, 0xffffffff, bodyMaterial);
+            if (armed) drawSphere(x, y + 1.76f * scale, z, .37f * scale, skin);
+            else drawTexturedSphere(x, y + 1.76f * scale, z, .37f * scale, 0xffffffff, MAT_ENEMY);
             drawBox(x, y + 2.02f * scale, z, .76f * scale, .16f * scale, .44f * scale, 0xff153245);
-            drawBox(x - .25f * scale, y + .08f * scale, z, .22f * scale, .55f * scale, .25f * scale, 0xff1a3349);
-            drawBox(x + .25f * scale, y + .08f * scale, z, .22f * scale, .55f * scale, .25f * scale, 0xff1a3349);
-            drawBox(x - .57f * scale, y + 1.02f * scale, z - .05f, .18f * scale, .70f * scale, .20f * scale, suit);
-            drawBox(x + .57f * scale, y + 1.02f * scale, z - .05f, .18f * scale, .70f * scale, .20f * scale, suit);
+            drawTexturedBox(x - .25f * scale, y + .08f * scale, z, .22f * scale, .55f * scale, .25f * scale, 0xffffffff, bodyMaterial);
+            drawTexturedBox(x + .25f * scale, y + .08f * scale, z, .22f * scale, .55f * scale, .25f * scale, 0xffffffff, bodyMaterial);
+            drawTexturedBox(x - .57f * scale, y + 1.02f * scale, z - .05f, .18f * scale, .70f * scale, .20f * scale, 0xffffffff, bodyMaterial);
+            drawTexturedBox(x + .57f * scale, y + 1.02f * scale, z - .05f, .18f * scale, .70f * scale, .20f * scale, 0xffffffff, bodyMaterial);
             if (armed) {
                 drawBox(x + .62f * scale, y + 1.23f * scale, z - .33f * scale, .15f * scale, .15f * scale, .85f * scale, 0xff2b3540);
                 drawSphere(x + .62f * scale, y + 1.23f * scale, z - .79f * scale, .08f * scale, 0xffffe28a);
@@ -1201,7 +1220,23 @@ public final class Breakline3DView extends FrameLayout {
             drawMesh(sphere, x, y, z, radius * 2f, radius * 2f, radius * 2f, 0f, color);
         }
 
+        private void drawTexturedBox(float x, float y, float z, float sx, float sy, float sz, int color, int material) {
+            drawMesh(box, x, y, z, sx, sy, sz, 0f, color, material);
+        }
+
+        private void drawTexturedCylinder(float x, float y, float z, float radius, float h, int color, int material) {
+            drawMesh(cylinder, x, y, z, radius * 2f, h, radius * 2f, 0f, color, material);
+        }
+
+        private void drawTexturedSphere(float x, float y, float z, float radius, int color, int material) {
+            drawMesh(sphere, x, y, z, radius * 2f, radius * 2f, radius * 2f, 0f, color, material);
+        }
+
         private void drawMesh(Mesh mesh, float x, float y, float z, float sx, float sy, float sz, float rotY, int color) {
+            drawMesh(mesh, x, y, z, sx, sy, sz, rotY, color, -1);
+        }
+
+        private void drawMesh(Mesh mesh, float x, float y, float z, float sx, float sy, float sz, float rotY, int color, int material) {
             Matrix.setIdentityM(model, 0);
             Matrix.translateM(model, 0, x, y, z);
             if (rotY != 0f) Matrix.rotateM(model, 0, rotY, 0f, 1f, 0f);
@@ -1210,7 +1245,32 @@ public final class Breakline3DView extends FrameLayout {
             GLES20.glUniformMatrix4fv(mvpLoc, 1, false, mvp, 0);
             GLES20.glUniformMatrix4fv(modelLoc, 1, false, model, 0);
             GLES20.glUniform4f(colorLoc, Color.red(color) / 255f, Color.green(color) / 255f, Color.blue(color) / 255f, Color.alpha(color) / 255f);
+            GLES20.glUniform1f(textureMixLoc, material >= 0 ? 1f : 0f);
+            if (material >= 0) {
+                float offsetX = (material == MAT_BARREL || material == MAT_ENEMY) ? .5f : 0f;
+                float offsetY = (material == MAT_ROAD || material == MAT_BARREL) ? .5f : 0f;
+                GLES20.glUniform4f(uvRectLoc, .5f, .5f, offsetX, offsetY);
+            } else {
+                GLES20.glUniform4f(uvRectLoc, 1f, 1f, 0f, 0f);
+            }
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, materialTexture);
             mesh.draw(posLoc, normalLoc);
+        }
+
+        private int loadMaterialAtlas() {
+            Bitmap bitmap = BitmapFactory.decodeResource(host.getResources(), R.drawable.breakline_material_atlas);
+            int[] handles = new int[1];
+            GLES20.glGenTextures(1, handles, 0);
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, handles[0]);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR_MIPMAP_LINEAR);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0);
+            GLES20.glGenerateMipmap(GLES20.GL_TEXTURE_2D);
+            bitmap.recycle();
+            return handles[0];
         }
 
         private static int createProgram(String vertex, String fragment) {
@@ -1246,9 +1306,14 @@ public final class Breakline3DView extends FrameLayout {
                 "uniform vec4 uColor;\n" +
                 "uniform vec3 uLight;\n" +
                 "uniform vec3 uCamera;\n" +
+                "uniform vec4 uUvRect;\n" +
                 "varying vec4 vColor;\n" +
                 "varying float vDistance;\n" +
+                "varying vec2 vUv;\n" +
                 "void main() {\n" +
+                "  vec3 absN = abs(aNormal);\n" +
+                "  vec2 uv = absN.y > max(absN.x, absN.z) ? aPosition.xz + 0.5 : (absN.x > absN.z ? aPosition.zy + 0.5 : aPosition.xy + 0.5);\n" +
+                "  vUv = uv * uUvRect.xy + uUvRect.zw;\n" +
                 "  vec3 n = normalize((uModel * vec4(aNormal, 0.0)).xyz);\n" +
                 "  float light = max(dot(n, normalize(uLight)), 0.0);\n" +
                 "  vec3 world = (uModel * vec4(aPosition, 1.0)).xyz;\n" +
@@ -1263,10 +1328,15 @@ public final class Breakline3DView extends FrameLayout {
                 "precision mediump float;\n" +
                 "varying vec4 vColor;\n" +
                 "varying float vDistance;\n" +
+                "varying vec2 vUv;\n" +
                 "uniform vec3 uFogColor;\n" +
+                "uniform sampler2D uTexture;\n" +
+                "uniform float uTextureMix;\n" +
                 "void main() {\n" +
                 "  float fog = smoothstep(31.0, 72.0, vDistance);\n" +
-                "  gl_FragColor = vec4(mix(vColor.rgb, uFogColor, fog), vColor.a);\n" +
+                "  vec4 sampled = texture2D(uTexture, vUv);\n" +
+                "  vec3 shaded = vColor.rgb * mix(vec3(1.0), sampled.rgb, uTextureMix);\n" +
+                "  gl_FragColor = vec4(mix(shaded, uFogColor, fog), vColor.a);\n" +
                 "}";
     }
 
