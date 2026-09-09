@@ -1,0 +1,10 @@
+	draw_string(ThemeDB.fallback_font,Vector2(520,520),"ひとりでは届かない場所へ、ふたりで。",HORIZONTAL_ALIGNMENT_CENTER,880,38,Color.WHITE)
+	draw_string(ThemeDB.fallback_font,Vector2(520,600),"Runner + God  /  cooperative prototype v0.2",HORIZONTAL_ALIGNMENT_CENTER,880,25,Color(0.65,0.87,1))
+
+func glow_box(color:Color, radius:float) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = color
+	s.corner_radius_top_left = int(radius); s.corner_radius_top_right=int(radius); s.corner_radius_bottom_left=int(radius); s.corner_radius_bottom_right=int(radius)
+	s.border_width_left=2; s.border_width_right=2; s.border_width_top=2; s.border_width_bottom=2
+	s.border_color = Color(color.r+0.15,color.g+0.15,color.b+0.15,min(1.0,color.a+0.12))
+	return s
