@@ -19,6 +19,7 @@ window/energy_saving/keep_screen_on=true
 [rendering]
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.035, 0.08, 0.16, 1)
 
 [input_devices]
