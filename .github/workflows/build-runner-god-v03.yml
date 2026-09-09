@@ -1,0 +1,91 @@
+name: Build Runner God Godot APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ runner-god-godot-v03 ]
+    paths-ignore:
+      - 'downloads/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.1"
+
+      - name: Download Godot 4.7.2 and export templates
+        run: |
+          wget -q https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
+          unzip -q Godot_v4.7.2-stable_linux.x86_64.zip
+          chmod +x Godot_v4.7.2-stable_linux.x86_64
+          wget -q https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.7.2.stable"
+          unzip -q Godot_v4.7.2-stable_export_templates.tpz -d /tmp/godot_templates
+          cp -r /tmp/godot_templates/templates/* "$HOME/.local/share/godot/export_templates/4.7.2.stable/"
+
+      - name: Configure Godot Android paths
+        run: |
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.7.tres" <<SETTINGS
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "${ANDROID_HOME}"
+          export/android/java_sdk_path = "${JAVA_HOME}"
+          SETTINGS
+
+      - name: Import project and catch script errors
+        run: |
+          ./Godot_v4.7.2-stable_linux.x86_64 --headless --editor --path . --quit-after 10 2>&1 | tee import.log
+          ! grep -E "SCRIPT ERROR|Parse Error" import.log
+
+      - name: Runtime smoke test
+        run: |
+          timeout 8s ./Godot_v4.7.2-stable_linux.x86_64 --headless --path . --rendering-method gl_compatibility 2>&1 | tee runtime.log || test $? -eq 124
+          ! grep -E "SCRIPT ERROR|Parse Error|Invalid call|Invalid access" runtime.log
+
+      - name: Export Android debug APK
+        env:
+          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: /home/runner/.android/debug.keystore
+          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
+        run: |
+          mkdir -p build "$HOME/.android"
+          keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=RunnerGod,C=JP"
+          ./Godot_v4.7.2-stable_linux.x86_64 --headless --path . --export-debug Android build/runner-god-v0.3.apk 2>&1 | tee export.log
+          ! grep -E "ERROR:|Parse Error" export.log
+          test -s build/runner-god-v0.3.apk
+
+      - name: Publish direct-download APK
+        run: |
+          mkdir -p downloads
+          cp build/runner-god-v0.3.apk downloads/runner-god-v0.3.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add downloads/runner-god-v0.3.apk
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish Runner + God v0.3 APK"
+            git pull --rebase origin runner-god-godot-v03
+            git push origin HEAD:runner-god-godot-v03
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runner-god-v0.3-apk
+          path: build/runner-god-v0.3.apk
