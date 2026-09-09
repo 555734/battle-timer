@@ -146,7 +146,7 @@ func _physics_process(delta: float) -> void:
         $Renderer.queue_redraw()
         return
 
-    energy = min(max_energy, energy + 5.5 * delta)
+    energy = minf(max_energy, energy + 5.5 * delta)
     if message_t > 0.0:
         message_t -= delta
     if jump_buffer > 0.0:
@@ -173,7 +173,7 @@ func _physics_process(delta: float) -> void:
         _sfx("jump")
         _burst(player_pos + Vector2(0, 28), Color("85f8ff"), 7, 120.0)
 
-    player_vel.y = min(MAX_FALL, player_vel.y + GRAVITY * delta)
+    player_vel.y = minf(MAX_FALL, player_vel.y + GRAVITY * delta)
     _move_player(delta)
     _update_enemies(delta)
     _update_magic(delta)
@@ -187,10 +187,10 @@ func _physics_process(delta: float) -> void:
     if player_pos.x > GOAL_X:
         _finish()
 
-    target_camera_x = clamp(player_pos.x - 350.0, 0.0, GOAL_X - 750.0)
+    target_camera_x = clampf(player_pos.x - 350.0, 0.0, GOAL_X - 750.0)
     camera_x = lerp(camera_x, target_camera_x, 1.0 - pow(0.0008, delta))
     if shake > 0.0:
-        shake = max(0.0, shake - delta)
+        shake = maxf(0.0, shake - delta)
         shake_offset = Vector2(randf_range(-1,1), randf_range(-1,1)) * 10.0 * (shake / 0.18)
     else:
         shake_offset = Vector2.ZERO
@@ -242,7 +242,7 @@ func _player_rect() -> Rect2:
 func _update_enemies(delta: float) -> void:
     for e in enemies:
         if e.stasis > 0.0:
-            e.stasis = max(0.0, e.stasis - delta)
+            e.stasis = maxf(0.0, float(e.stasis) - delta)
             continue
         e.pos.x += e.dir * 82.0 * delta
         if abs(e.pos.x - e.home) > e.range:
@@ -279,7 +279,7 @@ func _collect_crystals() -> void:
         if collected.has(i): continue
         if player_pos.distance_to(crystals[i]) < 58.0:
             collected[i] = true
-            energy = min(max_energy, energy + 26.0)
+            energy = minf(max_energy, energy + 26.0)
             _sfx("orb")
             _burst(crystals[i], Color("ffd56a"), 15, 190.0)
             rings.append({"pos":crystals[i], "radius":15.0, "speed":170.0, "life":0.38, "max":0.38, "color":Color("ffe69a")})
@@ -306,8 +306,8 @@ func _respawn() -> void:
     _burst(player_pos, Color("ff6b77"), 20, 260.0)
     player_pos = checkpoint
     player_vel = Vector2.ZERO
-    energy = max(45.0, energy)
-    camera_x = max(0.0, checkpoint.x - 350.0)
+    energy = maxf(45.0, energy)
+    camera_x = maxf(0.0, checkpoint.x - 350.0)
     shake = 0.18
     _toast("THE GOD PULLS YOU BACK")
     _vibrate(55)
@@ -420,31 +420,33 @@ func _drag(id: int, pos: Vector2, relative: Vector2) -> void:
     if role == "god_draw":
         god_draw_end = _screen_to_world(pos)
     elif role == "drag_magic" and dragging_magic >= 0 and dragging_magic < magic_platforms.size():
-        var world := _screen_to_world(pos) + drag_offset
-        var m = magic_platforms[dragging_magic]
+        var world: Vector2 = _screen_to_world(pos) + drag_offset
+        var m: Dictionary = magic_platforms[dragging_magic] as Dictionary
         if energy > 0.0:
-            var old := m.rect.get_center()
-            var next := old.lerp(world, 0.33)
-            var d := old.distance_to(next)
-            energy = max(0.0, energy - d * 0.045)
-            m.rect.position = next - m.rect.size * 0.5
-            m.ttl = min(10.0, m.ttl + 0.02)
-            _spark_line(old, next, Color("77ecff"))
+            var rect: Rect2 = m["rect"] as Rect2
+            var old: Vector2 = rect.get_center()
+            var next_pos: Vector2 = old.lerp(world, 0.33)
+            var d: float = old.distance_to(next_pos)
+            energy = maxf(0.0, energy - d * 0.045)
+            rect.position = next_pos - rect.size * 0.5
+            m["rect"] = rect
+            m["ttl"] = minf(10.0, float(m["ttl"]) + 0.02)
+            _spark_line(old, next_pos, Color("77ecff"))
 
 func _commit_magic_platform() -> void:
     god_drawing = false
-    var dx := god_draw_end.x - god_draw_start.x
-    var length := abs(dx)
+    var dx: float = god_draw_end.x - god_draw_start.x
+    var length: float = absf(dx)
     if length < 55.0: return
-    length = min(length, 360.0)
-    var cost := 12.0 + length * 0.095
+    length = minf(length, 360.0)
+    var cost: float = 12.0 + length * 0.095
     if energy < cost:
         _toast("NOT ENOUGH GOD POWER")
         return
     energy -= cost
-    var center_x := (god_draw_start.x + god_draw_end.x) * 0.5
-    var y := (god_draw_start.y + god_draw_end.y) * 0.5
-    var rect := Rect2(center_x - length * 0.5, y - 11.0, length, 22.0)
+    var center_x: float = (god_draw_start.x + god_draw_end.x) * 0.5
+    var y: float = (god_draw_start.y + god_draw_end.y) * 0.5
+    var rect: Rect2 = Rect2(center_x - length * 0.5, y - 11.0, length, 22.0)
     magic_serial += 1
     magic_platforms.append({"rect":rect, "ttl":8.5, "pulse":0.0, "id":magic_serial})
     _sfx("cast")
@@ -453,7 +455,7 @@ func _commit_magic_platform() -> void:
     _vibrate(20)
 
 func _spark_line(a: Vector2, b: Vector2, color: Color) -> void:
-    var count := int(clamp(a.distance_to(b)/28.0, 2.0, 12.0))
+    var count: int = int(clampf(a.distance_to(b) / 28.0, 2.0, 12.0))
     for i in range(count):
         var p := a.lerp(b, randf())
         particles.append({"pos":p, "vel":Vector2(randf_range(-30,30),randf_range(-65,-15)), "life":randf_range(.18,.4), "max":.4, "color":color, "size":randf_range(2.0,5.0)})
