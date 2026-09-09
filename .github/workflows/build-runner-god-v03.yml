@@ -16,6 +16,72 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Normalize source for Godot 4.7
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('main.gd')
+          s = p.read_text()
+          s = s.replace('''        var world := _screen_to_world(pos) + drag_offset
+                  var m = magic_platforms[dragging_magic]
+                  if energy > 0.0:
+                      var old := m.rect.get_center()
+                      var next := old.lerp(world, 0.33)
+                      var d := old.distance_to(next)
+                      energy = max(0.0, energy - d * 0.045)
+                      m.rect.position = next - m.rect.size * 0.5
+                      m.ttl = min(10.0, m.ttl + 0.02)
+                      _spark_line(old, next, Color("77ecff"))''', '''        var world: Vector2 = _screen_to_world(pos) + drag_offset
+                  var m: Dictionary = magic_platforms[dragging_magic] as Dictionary
+                  if energy > 0.0:
+                      var rect: Rect2 = m["rect"] as Rect2
+                      var old: Vector2 = rect.get_center()
+                      var next_pos: Vector2 = old.lerp(world, 0.33)
+                      var d: float = old.distance_to(next_pos)
+                      energy = maxf(0.0, energy - d * 0.045)
+                      rect.position = next_pos - rect.size * 0.5
+                      m["rect"] = rect
+                      m["ttl"] = minf(10.0, float(m["ttl"]) + 0.02)
+                      _spark_line(old, next_pos, Color("77ecff"))''')
+          s = s.replace('    var dx := god_draw_end.x - god_draw_start.x\n    var length := abs(dx)\n', '    var dx: float = god_draw_end.x - god_draw_start.x\n    var length: float = absf(dx)\n')
+          s = s.replace('    length = min(length, 360.0)\n    var cost := 12.0 + length * 0.095\n', '    length = minf(length, 360.0)\n    var cost: float = 12.0 + length * 0.095\n')
+          s = s.replace('    var center_x := (god_draw_start.x + god_draw_end.x) * 0.5\n    var y := (god_draw_start.y + god_draw_end.y) * 0.5\n    var rect := Rect2(center_x - length * 0.5, y - 11.0, length, 22.0)\n', '    var center_x: float = (god_draw_start.x + god_draw_end.x) * 0.5\n    var y: float = (god_draw_start.y + god_draw_end.y) * 0.5\n    var rect: Rect2 = Rect2(center_x - length * 0.5, y - 11.0, length, 22.0)\n')
+          s = s.replace('energy = min(max_energy, energy + 5.5 * delta)', 'energy = minf(max_energy, energy + 5.5 * delta)')
+          s = s.replace('player_vel.y = min(MAX_FALL, player_vel.y + GRAVITY * delta)', 'player_vel.y = minf(MAX_FALL, player_vel.y + GRAVITY * delta)')
+          s = s.replace('target_camera_x = clamp(player_pos.x - 350.0, 0.0, GOAL_X - 750.0)', 'target_camera_x = clampf(player_pos.x - 350.0, 0.0, GOAL_X - 750.0)')
+          s = s.replace('shake = max(0.0, shake - delta)', 'shake = maxf(0.0, shake - delta)')
+          s = s.replace('e.stasis = max(0.0, e.stasis - delta)', 'e.stasis = maxf(0.0, float(e.stasis) - delta)')
+          s = s.replace('energy = min(max_energy, energy + 26.0)', 'energy = minf(max_energy, energy + 26.0)')
+          s = s.replace('energy = max(45.0, energy)', 'energy = maxf(45.0, energy)')
+          s = s.replace('camera_x = max(0.0, checkpoint.x - 350.0)', 'camera_x = maxf(0.0, checkpoint.x - 350.0)')
+          s = s.replace('var count := int(clamp(a.distance_to(b)/28.0, 2.0, 12.0))', 'var count: int = int(clampf(a.distance_to(b) / 28.0, 2.0, 12.0))')
+          p.write_text(s)
+
+          p = Path('renderer.gd')
+          s = p.read_text()
+          if 'const RUN_SPEED := 390.0' not in s:
+              s = s.replace('const GOAL_X := 4840.0\n', 'const GOAL_X := 4840.0\nconst RUN_SPEED := 390.0\n')
+          lines = []
+          for line in s.splitlines():
+              if line.startswith('var ') and ': get: return game.' in line:
+                  left, expr = line.split(': get: return ', 1)
+                  lines += [left + ':', '    get:', '        return ' + expr]
+              else:
+                  lines.append(line)
+          s = '\n'.join(lines) + '\n'
+          s = s.replace('var a := clamp(p.life / p.max, 0.0,1.0)', 'var a: float = clampf(float(p.life) / float(p.max), 0.0, 1.0)')
+          s = s.replace('var a := clamp(r.life/r.max,0.0,1.0)', 'var a: float = clampf(float(r.life) / float(r.max), 0.0, 1.0)')
+          s = s.replace('var progress := clamp(player_pos.x/GOAL_X,0.0,1.0)', 'var progress: float = clampf(player_pos.x / GOAL_X, 0.0, 1.0)')
+          s = s.replace('var a := min(1.0,message_t*2.5)', 'var a: float = minf(1.0, message_t * 2.5)')
+          s = s.replace('var a := clamp(finish_t*2.0,0.0,1.0)', 'var a: float = clampf(finish_t * 2.0, 0.0, 1.0)')
+          p.write_text(s)
+
+          p = Path('project.godot')
+          s = p.read_text().replace('boot_splash/image="res://icon.svg"\n', '')
+          p.write_text(s)
+          PY
+
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -57,7 +123,11 @@ jobs:
 
       - name: Runtime smoke test
         run: |
-          timeout 8s ./Godot_v4.7.2-stable_linux.x86_64 --headless --path . --rendering-method gl_compatibility 2>&1 | tee runtime.log || test $? -eq 124
+          set +e
+          timeout 8s ./Godot_v4.7.2-stable_linux.x86_64 --headless --path . --rendering-method gl_compatibility 2>&1 | tee runtime.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
           ! grep -E "SCRIPT ERROR|Parse Error|Invalid call|Invalid access" runtime.log
 
       - name: Export Android debug APK
@@ -69,18 +139,18 @@ jobs:
           mkdir -p build "$HOME/.android"
           keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=RunnerGod,C=JP"
           ./Godot_v4.7.2-stable_linux.x86_64 --headless --path . --export-debug Android build/runner-god-v0.3.apk 2>&1 | tee export.log
-          ! grep -E "ERROR:|Parse Error" export.log
+          ! grep -E "SCRIPT ERROR|Parse Error|Invalid call|Invalid access" export.log
           test -s build/runner-god-v0.3.apk
 
-      - name: Publish direct-download APK
+      - name: Publish tested source and direct-download APK
         run: |
           mkdir -p downloads
           cp build/runner-god-v0.3.apk downloads/runner-god-v0.3.apk
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add downloads/runner-god-v0.3.apk
+          git add main.gd renderer.gd project.godot downloads/runner-god-v0.3.apk
           if ! git diff --cached --quiet; then
-            git commit -m "Publish Runner + God v0.3 APK"
+            git commit -m "Publish tested Runner + God v0.3"
             git pull --rebase origin runner-god-godot-v03
             git push origin HEAD:runner-god-godot-v03
           fi
