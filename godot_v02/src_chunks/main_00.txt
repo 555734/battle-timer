@@ -1,0 +1,179 @@
+extends Node2D
+
+const VW := 1920.0
+const VH := 1080.0
+const FLOOR_Y := 790.0
+const RUNNER_SIZE := Vector2(46, 72)
+const GRAVITY := 1850.0
+const RUN_SPEED := 455.0
+const JUMP_SPEED := 760.0
+const MAX_FALL := 1180.0
+
+var runner_pos := Vector2(250, 650)
+var runner_vel := Vector2.ZERO
+var runner_grounded := false
+var coyote := 0.0
+var jump_buffer := 0.0
+var checkpoint := Vector2(250, 650)
+var camera_x := 0.0
+var time := 0.0
+var mana := 100.0
+var god_mode := 0 # 0 create, 1 move, 2 freeze, 3 lift
+var god_touch := -1
+var god_down_world := Vector2.ZERO
+var god_now_world := Vector2.ZERO
+var dragging_platform := -1
+var drag_offset := Vector2.ZERO
+var platform_serial := 0
+var message := "2人で右端の門へ。下=ランナー / 上=神"
+var message_t := 6.0
+var last_section := -1
+var win := false
+var respawn_flash := 0.0
+var screen_shake := 0.0
+var lift_cd := 0.0
+
+var runner_touches := {}
+var touch_roles := {}
+var runner_left := false
+var runner_right := false
+var runner_jump := false
+
+var world_rects := [
+	Rect2(-300, 790, 1050, 360),
+	Rect2(1060, 735, 470, 415),
+	Rect2(1540, 665, 330, 485),
+	Rect2(1880, 790, 590, 360),
+	Rect2(2710, 720, 210, 430),
+	Rect2(3160, 790, 760, 360),
+	Rect2(4320, 735, 230, 415),
+	Rect2(4680, 790, 900, 360),
+]
+
+var god_platforms := []
+var particles := []
+var crystals := [Vector2(1210, 640), Vector2(1760, 570), Vector2(2800, 635), Vector2(4425, 645)]
+var crystal_taken := [false, false, false, false]
+var enemies := [
+	{"p":Vector2(2180, 735), "base":2180.0, "dir":1.0, "frozen":0.0},
+	{"p":Vector2(3480, 735), "base":3480.0, "dir":-1.0, "frozen":0.0},
+]
+
+func _ready():
+	set_process(true)
+	set_physics_process(true)
+	queue_redraw()
+
+func _physics_process(delta):
+	if win:
+		queue_redraw()
+		return
+	time += delta
+	mana = min(100.0, mana + 4.0 * delta)
+	message_t = max(0.0, message_t - delta)
+	respawn_flash = max(0.0, respawn_flash - delta)
+	screen_shake = max(0.0, screen_shake - delta)
+	lift_cd = max(0.0, lift_cd - delta)
+	_update_enemies(delta)
+	_update_platforms(delta)
+	_update_runner(delta)
+	_update_particles(delta)
+	_update_camera(delta)
+	_update_section_message()
+	queue_redraw()
+
+func _update_runner(delta):
+	var target := 0.0
+	if runner_left: target -= RUN_SPEED
+	if runner_right: target += RUN_SPEED
+	var accel := 2600.0 if runner_grounded else 1450.0
+	runner_vel.x = move_toward(runner_vel.x, target, accel * delta)
+	if target == 0.0 and runner_grounded:
+		runner_vel.x = move_toward(runner_vel.x, 0.0, 3200.0 * delta)
+
+	if runner_grounded:
+		coyote = 0.12
+	else:
+		coyote = max(0.0, coyote - delta)
+	if runner_jump:
+		jump_buffer = 0.14
+	else:
+		jump_buffer = max(0.0, jump_buffer - delta)
+	if jump_buffer > 0.0 and coyote > 0.0:
+		runner_vel.y = -JUMP_SPEED
+		runner_grounded = false
+		coyote = 0.0
+		jump_buffer = 0.0
+		burst(runner_pos + Vector2(0, 30), Color(0.65,0.9,1), 8, 180)
+	if not runner_jump and runner_vel.y < -260.0:
+		runner_vel.y += 1250.0 * delta
+	runner_vel.y = min(MAX_FALL, runner_vel.y + GRAVITY * delta)
+
+	_runner_move_x(runner_vel.x * delta)
+	runner_grounded = false
+	_runner_move_y(runner_vel.y * delta)
+
+	for i in range(crystals.size()):
+		if not crystal_taken[i] and runner_pos.distance_to(crystals[i]) < 62:
+			crystal_taken[i] = true
+			mana = min(100.0, mana + 30.0)
+			burst(crystals[i], Color(0.35,1,0.95), 18, 300)
+			show_message("神力 +30！ 次のギミックに使える", 2.2)
+
+	for e in enemies:
+		if e.frozen <= 0.0 and runner_pos.distance_to(e.p) < 58:
+			respawn()
+			return
+
+	if runner_pos.y > 1120:
+		respawn()
+	if runner_pos.x > 5140:
+		win = true
+		burst(Vector2(5160,700), Color(1,0.82,0.35), 60, 480)
+
+func _runner_move_x(dx):
+	if abs(dx) < 0.01: return
+	var next := Rect2(runner_pos.x - RUNNER_SIZE.x/2 + dx, runner_pos.y - RUNNER_SIZE.y/2, RUNNER_SIZE.x, RUNNER_SIZE.y)
+	for r in collision_rects():
+		if next.intersects(r):
+			if dx > 0: runner_pos.x = r.position.x - RUNNER_SIZE.x/2 - 0.5
+			else: runner_pos.x = r.end.x + RUNNER_SIZE.x/2 + 0.5
+			runner_vel.x = 0
+			return
+	runner_pos.x += dx
+
+func _runner_move_y(dy):
+	if abs(dy) < 0.01: return
+	var next := Rect2(runner_pos.x - RUNNER_SIZE.x/2, runner_pos.y - RUNNER_SIZE.y/2 + dy, RUNNER_SIZE.x, RUNNER_SIZE.y)
+	for r in collision_rects():
+		if next.intersects(r):
+			if dy > 0:
+				runner_pos.y = r.position.y - RUNNER_SIZE.y/2 - 0.5
+				runner_vel.y = 0
+				runner_grounded = true
+			else:
+				runner_pos.y = r.end.y + RUNNER_SIZE.y/2 + 0.5
+				runner_vel.y = 0
+			return
+	runner_pos.y += dy
+
+func collision_rects():
+	var arr := world_rects.duplicate()
+	for p in god_platforms:
+		arr.append(Rect2(p.pos.x-p.size.x/2, p.pos.y-p.size.y/2, p.size.x, p.size.y))
+	return arr
+
+func _update_enemies(delta):
+	for e in enemies:
+		if e.frozen > 0:
+			e.frozen -= delta
+			continue
+		e.p.x += e.dir * 88.0 * delta
+		if abs(e.p.x - e.base) > 145:
+			e.dir *= -1
+
+func _update_platforms(delta):
+	for i in range(god_platforms.size()-1, -1, -1):
+		god_platforms[i].life -= delta
+		if god_platforms[i].life <= 0:
+			burst(god_platforms[i].pos, Color(0.3,0.8,1), 10, 160)
