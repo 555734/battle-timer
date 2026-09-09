@@ -1,0 +1,103 @@
+name: Build Runner God Godot APK
+
+on:
+  push:
+    branches: [runner-god-godot-v02]
+    paths:
+      - '.github/workflows/runner-god-godot.yml'
+      - 'ci/runner-god-source.part*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore Godot project source
+        run: |
+          mkdir -p game
+          cat ci/runner-god-source.part* | base64 -d > /tmp/runner-god.tgz
+          tar -xzf /tmp/runner-god.tgz -C game
+          ls -la game
+
+      - name: Generate art and sound assets
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 game/generate_assets.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android export dependencies
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platform-tools' 'build-tools;35.0.1' 'platforms;android-35'
+
+      - name: Install Godot 4.7.2 and export templates
+        run: |
+          curl -L --retry 4 -o /tmp/godot.zip 'https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip'
+          unzip -q /tmp/godot.zip -d /tmp/godot-bin
+          GODOT_BIN=$(find /tmp/godot-bin -maxdepth 1 -type f -name 'Godot*' | head -1)
+          chmod +x "$GODOT_BIN"
+          sudo cp "$GODOT_BIN" /usr/local/bin/godot
+          curl -L --retry 4 -o /tmp/templates.tpz 'https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz'
+          mkdir -p /tmp/godot-templates "$HOME/.local/share/godot/export_templates/4.7.2.stable"
+          unzip -q /tmp/templates.tpz -d /tmp/godot-templates
+          cp -a /tmp/godot-templates/templates/. "$HOME/.local/share/godot/export_templates/4.7.2.stable/"
+          godot --version
+
+      - name: Configure Godot Android exporter
+        run: |
+          mkdir -p "$HOME/.config/godot"
+          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore "$HOME/.config/godot/debug.keystore" -storepass android -dname 'CN=Android Debug,O=Android,C=US' -validity 9999 -deststoretype pkcs12
+          cat > "$HOME/.config/godot/editor_settings-4.7.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/debug_keystore = "$HOME/.config/godot/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+
+      - name: Validate GDScript
+        run: |
+          godot --headless --path game --import
+          godot --headless --path game --script res://game.gd --check-only
+
+      - name: Export Android APK
+        run: |
+          mkdir -p game/build
+          godot --headless --path game --export-debug Android build/runner-god-v0.2.apk
+          test -s game/build/runner-god-v0.2.apk
+          ls -lh game/build/runner-god-v0.2.apk
+
+      - name: Publish direct downloads
+        run: |
+          mkdir -p downloads
+          cp game/build/runner-god-v0.2.apk downloads/runner-god-v0.2.apk
+          rm -f game/build/runner-god-v0.2.apk
+          zip -qr downloads/runner-god-v0.2-godot-source.zip game -x 'game/build/*' 'game/.godot/*'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads/runner-god-v0.2.apk downloads/runner-god-v0.2-godot-source.zip
+          if ! git diff --cached --quiet; then
+            git commit -m 'Publish Runner God Godot v0.2 APK'
+            git push origin HEAD:runner-god-godot-v02
+          fi
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-god-v0.2-apk
+          path: downloads/runner-god-v0.2.apk
