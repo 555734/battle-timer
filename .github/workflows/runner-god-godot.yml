@@ -20,7 +20,10 @@ jobs:
       - name: Restore Godot project source
         run: |
           mkdir -p game
+          wc -c ci/runner-god-source.part*
+          sha256sum ci/runner-god-source.part*
           cat ci/runner-god-source.part* | base64 -d > /tmp/runner-god.tgz
+          sha256sum /tmp/runner-god.tgz
           tar -xzf /tmp/runner-god.tgz -C game
           ls -la game
 
