@@ -1,0 +1,180 @@
+	draw_background(shake)
+	draw_world(shake)
+	draw_runner(shake)
+	draw_particles(shake)
+	draw_hud()
+	if respawn_flash > 0: draw_rect(Rect2(0,0,VW,VH), Color(1,0.18,0.1,respawn_flash*0.35))
+	if win: draw_win()
+
+func sx(x:float) -> float: return x-camera_x
+func wp(p:Vector2, shake:=Vector2.ZERO) -> Vector2: return Vector2(sx(p.x), p.y)+shake
+
+func draw_background(shake:Vector2):
+	# Layered sky gradient.
+	for i in range(18):
+		var t := i/17.0
+		var c := Color(0.035,0.11,0.23).lerp(Color(0.31,0.68,0.82), t)
+		draw_rect(Rect2(0,i*60,VW,62),c)
+	# Sun + mist.
+	draw_circle(Vector2(1510 - fmod(camera_x*0.04,280),230),110,Color(1,0.86,0.54,0.28))
+	for i in range(7):
+		var cx := fmod(i*330.0-camera_x*0.08,2300.0)-150
+		var cy := 190 + (i%3)*80
+		draw_circle(Vector2(cx,cy),70,Color(0.8,0.94,1,0.12))
+		draw_circle(Vector2(cx+70,cy+12),95,Color(0.8,0.94,1,0.1))
+	# Far mountains.
+	for i in range(8):
+		var bx := i*430.0 - fmod(camera_x*0.12,430.0)-220
+		draw_colored_polygon(PackedVector2Array([Vector2(bx,680),Vector2(bx+220,330+(i%3)*50),Vector2(bx+480,680)]),Color(0.12,0.28,0.38,0.65))
+	# Floating cliffs / castle silhouettes.
+	var castle_x := 870.0 - camera_x*0.2
+	draw_rect(Rect2(castle_x,420,260,220),Color(0.14,0.26,0.35,0.55))
+	for i in range(4):
+		draw_rect(Rect2(castle_x+25+i*58,340-(i%2)*55,36,105+(i%2)*55),Color(0.14,0.26,0.35,0.55))
+	# Bottom mist.
+	draw_rect(Rect2(0,700,VW,190),Color(0.65,0.9,0.95,0.08))
+
+func draw_world(shake:Vector2):
+	for r in world_rects:
+		draw_terrain(r, shake)
+	# God platforms.
+	for p in god_platforms:
+		var q := wp(p.pos,shake)
+		var rr := Rect2(q.x-p.size.x/2,q.y-p.size.y/2,p.size.x,p.size.y)
+		for k in range(4):
+			draw_style_box(glow_box(Color(0.18,0.75,1,0.08+0.04*k),16+k*7), rr.grow(4+k*5))
+		draw_style_box(glow_box(Color(0.18,0.74,1,0.72),12),rr)
+		for x in range(int(rr.position.x+22),int(rr.end.x),44):
+			draw_line(Vector2(x,rr.position.y+5),Vector2(x,rr.end.y-5),Color(0.8,0.98,1,0.32),2)
+		var frac := p.life/18.0
+		draw_rect(Rect2(rr.position.x,rr.end.y+7,rr.size.x*frac,4),Color(0.4,0.9,1,0.7))
+	# Crystals.
+	for i in range(crystals.size()):
+		if crystal_taken[i]: continue
+		var c := wp(crystals[i],shake)
+		var bob := sin(time*3+i)*9
+		var pts := PackedVector2Array([c+Vector2(0,-27+bob),c+Vector2(18,-3+bob),c+Vector2(0,27+bob),c+Vector2(-18,-3+bob)])
+		draw_colored_polygon(pts,Color(0.2,1,0.88,0.95))
+		draw_polyline(pts,Color(0.85,1,1),3)
+		draw_circle(c+Vector2(0,bob),42,Color(0.25,1,0.9,0.08))
+	# Enemies.
+	for e in enemies: draw_enemy(e,shake)
+	# checkpoint
+	var cp := wp(Vector2(2250,700),shake)
+	draw_line(cp+Vector2(0,80),cp+Vector2(0,-80),Color(0.85,0.78,0.55),8)
+	draw_colored_polygon(PackedVector2Array([cp+Vector2(0,-75),cp+Vector2(75,-55),cp+Vector2(0,-25)]),Color(0.32,0.82,1))
+	if runner_pos.x > 2250 and checkpoint.x < 2000:
+		checkpoint = Vector2(2190,690)
+	# goal portal
+	var g := wp(Vector2(5190,690),shake)
+	for k in range(6):
+		draw_arc(g,72+k*7,0,TAU,48,Color(1,0.75,0.28,0.08+0.04*k),8)
+	draw_arc(g,74,0,TAU,48,Color(1,0.9,0.56,0.92),7)
+	draw_string(ThemeDB.fallback_font,g+Vector2(-60,-100),"GOAL",HORIZONTAL_ALIGNMENT_CENTER,120,32,Color.WHITE)
+	# create preview
+	if god_touch != -1 and god_mode == 0 and god_down_world != god_now_world:
+		var a := wp(god_down_world); var b := wp(god_now_world)
+		draw_line(a,b,Color(0.35,0.95,1,0.75),16,true)
+		draw_circle(a,17,Color(0.8,1,1,0.9)); draw_circle(b,17,Color(0.8,1,1,0.9))
+
+func draw_terrain(r:Rect2, shake:Vector2):
+	var sr := Rect2(sx(r.position.x)+shake.x,r.position.y+shake.y,r.size.x,r.size.y)
+	if sr.end.x < -60 or sr.position.x > VW+60: return
+	draw_rect(sr,Color(0.12,0.19,0.25))
+	draw_rect(Rect2(sr.position,Vector2(sr.size.x,18)),Color(0.25,0.53,0.28))
+	draw_rect(Rect2(sr.position+Vector2(0,17),Vector2(sr.size.x,9)),Color(0.44,0.72,0.31))
+	var y := int(sr.position.y+36)
+	while y < min(int(sr.end.y),1080):
+		var off := 0 if int((y-sr.position.y)/34)%2==0 else 25
+		var x := int(sr.position.x)-50+off
+		while x < sr.end.x:
+			draw_rect(Rect2(x,y,46,25),Color(0.17,0.25,0.31),false,2)
+			x += 52
+		y += 34
+
+func draw_enemy(e, shake:Vector2):
+	var p := wp(e.p,shake)
+	var squish := sin(time*5+e.base)*4
+	var frozen := e.frozen > 0
+	var body := Color(0.34,0.8,0.32) if not frozen else Color(0.45,0.82,1)
+	draw_circle(p+Vector2(0,18),42+squish,body)
+	draw_rect(Rect2(p.x-42,p.y+18,p.x*0+84,24),body)
+	draw_circle(p+Vector2(-14,9),5,Color(0.03,0.08,0.1)); draw_circle(p+Vector2(14,9),5,Color(0.03,0.08,0.1))
+	if frozen:
+		draw_arc(p,58,0,TAU,20,Color(0.7,0.95,1,0.8),5)
+		for a in range(6): draw_line(p+Vector2.from_angle(a*TAU/6)*47,p+Vector2.from_angle(a*TAU/6)*68,Color(0.75,0.96,1),4)
+
+func draw_runner(shake:Vector2):
+	var p := wp(runner_pos,shake)
+	var moving := abs(runner_vel.x) > 50 and runner_grounded
+	var bob := sin(time*12)*4 if moving else sin(time*2.5)*2
+	var stretch := clamp(abs(runner_vel.y)/800.0,0,1)
+	# shadow
+	draw_ellipse(p+Vector2(0,42),Vector2(34,10),Color(0.02,0.05,0.08,0.32))
+	# scarf
+	var facing := 1.0 if runner_vel.x >= -5 else -1.0
+	var scarf := PackedVector2Array([p+Vector2(-facing*10,-12),p+Vector2(-facing*(48+abs(runner_vel.x)*0.05),-18),p+Vector2(-facing*20,2)])
+	draw_colored_polygon(scarf,Color(0.85,0.18,0.16))
+	# legs
+	var leg := sin(time*13)*13 if moving else 0.0
+	draw_line(p+Vector2(-10,22+bob),p+Vector2(-13+leg,42),Color(0.12,0.18,0.26),11)
+	draw_line(p+Vector2(10,22+bob),p+Vector2(13-leg,42),Color(0.12,0.18,0.26),11)
+	# body / coat
+	draw_colored_polygon(PackedVector2Array([p+Vector2(-25,-18+bob),p+Vector2(25,-18+bob),p+Vector2(31,25+bob),p+Vector2(-31,25+bob)]),Color(0.12,0.31,0.52))
+	draw_line(p+Vector2(0,-15+bob),p+Vector2(0,23+bob),Color(0.35,0.75,0.95),4)
+	# head
+	draw_circle(p+Vector2(0,-42-stretch*5+bob),23,Color(0.95,0.72,0.48))
+	# hair
+	draw_arc(p+Vector2(-1,-46-stretch*5+bob),25,3.2,6.1,12,Color(0.16,0.09,0.07),15)
+	# eye
+	draw_circle(p+Vector2(9*facing,-42-stretch*5+bob),3.4,Color(0.02,0.05,0.08))
+	# god glow when targeted
+	if god_mode == 3 and god_now_world.distance_to(runner_pos) < 150:
+		draw_arc(p,66,0,TAU,32,Color(1,0.86,0.35,0.7),5)
+
+func draw_ellipse(center:Vector2, radii:Vector2, color:Color):
+	var pts := PackedVector2Array()
+	for i in range(28):
+		var a := TAU*i/28.0
+		pts.append(center+Vector2(cos(a)*radii.x,sin(a)*radii.y))
+	draw_colored_polygon(pts,color)
+
+func draw_particles(shake:Vector2):
+	for p in particles:
+		var q := wp(p.pos,shake)
+		draw_circle(q,p.size*clamp(p.life,0.15,1.0),Color(p.col,p.life))
+
+func draw_hud():
+	# top HUD
+	draw_style_box(glow_box(Color(0.025,0.08,0.15,0.9),18),Rect2(18,16,930,116))
+	var modes := ["CREATE", "MOVE", "FREEZE", "LIFT"]
+	var icons := ["＋", "↔", "❄", "↑"]
+	for i in range(4):
+		var r := Rect2(36+i*220,30,202,86)
+		var c := Color(0.12,0.62,0.9,0.95) if god_mode==i else Color(0.07,0.15,0.23,0.88)
+		draw_style_box(glow_box(c,16),r)
+		draw_string(ThemeDB.fallback_font,r.position+Vector2(18,35),icons[i],HORIZONTAL_ALIGNMENT_LEFT,38,30,Color.WHITE)
+		draw_string(ThemeDB.fallback_font,r.position+Vector2(58,53),modes[i],HORIZONTAL_ALIGNMENT_LEFT,132,25,Color.WHITE)
+	# mana
+	draw_string(ThemeDB.fallback_font,Vector2(1000,58),"GOD POWER",HORIZONTAL_ALIGNMENT_LEFT,210,24,Color(0.75,0.92,1))
+	draw_style_box(glow_box(Color(0.02,0.07,0.12,0.88),16),Rect2(1000,72,500,38))
+	draw_style_box(glow_box(Color(0.2,0.76,1,0.9),13),Rect2(1006,78,488*mana/100.0,26))
+	draw_string(ThemeDB.fallback_font,Vector2(1518,101),str(int(mana)),HORIZONTAL_ALIGNMENT_LEFT,70,26,Color.WHITE)
+	# instruction banner
+	if message_t > 0:
+		var alpha := min(1.0,message_t*2.0)
+		draw_style_box(glow_box(Color(0.02,0.06,0.12,0.88*alpha),20),Rect2(420,150,1080,74))
+		draw_string(ThemeDB.fallback_font,Vector2(450,199),message,HORIZONTAL_ALIGNMENT_CENTER,1020,27,Color(1,1,1,alpha))
+	# runner controls
+	draw_style_box(glow_box(Color(0.02,0.05,0.09,0.72),28),Rect2(24,880,430,176))
+	draw_circle(Vector2(126,968),70,Color(0.12,0.25,0.36,0.88)); draw_circle(Vector2(318,968),70,Color(0.12,0.25,0.36,0.88))
+	draw_string(ThemeDB.fallback_font,Vector2(88,987),"◀",HORIZONTAL_ALIGNMENT_LEFT,80,48,Color.WHITE)
+	draw_string(ThemeDB.fallback_font,Vector2(280,987),"▶",HORIZONTAL_ALIGNMENT_LEFT,80,48,Color.WHITE)
+	draw_style_box(glow_box(Color(0.13,0.36,0.56,0.86),42),Rect2(1515,888,380,156))
+	draw_string(ThemeDB.fallback_font,Vector2(1545,989),"JUMP",HORIZONTAL_ALIGNMENT_CENTER,320,47,Color.WHITE)
+	draw_string(ThemeDB.fallback_font,Vector2(770,1042),"1P RUNNER",HORIZONTAL_ALIGNMENT_CENTER,380,22,Color(0.7,0.82,0.9,0.78))
+
+func draw_win():
+	draw_rect(Rect2(0,0,VW,VH),Color(0.015,0.04,0.08,0.72))
+	draw_style_box(glow_box(Color(0.04,0.14,0.23,0.97),34),Rect2(430,300,1060,430))
+	draw_string(ThemeDB.fallback_font,Vector2(470,430),"CLEAR!",HORIZONTAL_ALIGNMENT_CENTER,980,78,Color(1,0.88,0.45))
