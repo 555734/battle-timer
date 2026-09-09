@@ -46,7 +46,7 @@ func draw_world(shake:Vector2):
 		draw_style_box(glow_box(Color(0.18,0.74,1,0.72),12),rr)
 		for x in range(int(rr.position.x+22),int(rr.end.x),44):
 			draw_line(Vector2(x,rr.position.y+5),Vector2(x,rr.end.y-5),Color(0.8,0.98,1,0.32),2)
-		var frac := p.life/18.0
+		var frac: float = float(p.life)/18.0
 		draw_rect(Rect2(rr.position.x,rr.end.y+7,rr.size.x*frac,4),Color(0.4,0.9,1,0.7))
 	# Crystals.
 	for i in range(crystals.size()):
@@ -94,8 +94,8 @@ func draw_terrain(r:Rect2, shake:Vector2):
 
 func draw_enemy(e, shake:Vector2):
 	var p := wp(e.p,shake)
-	var squish := sin(time*5+e.base)*4
-	var frozen := e.frozen > 0
+	var squish: float = sin(time*5.0+float(e.base))*4.0
+	var frozen: bool = float(e.frozen) > 0.0
 	var body := Color(0.34,0.8,0.32) if not frozen else Color(0.45,0.82,1)
 	draw_circle(p+Vector2(0,18),42+squish,body)
 	draw_rect(Rect2(p.x-42,p.y+18,p.x*0+84,24),body)
@@ -106,9 +106,9 @@ func draw_enemy(e, shake:Vector2):
 
 func draw_runner(shake:Vector2):
 	var p := wp(runner_pos,shake)
-	var moving := abs(runner_vel.x) > 50 and runner_grounded
-	var bob := sin(time*12)*4 if moving else sin(time*2.5)*2
-	var stretch := clamp(abs(runner_vel.y)/800.0,0,1)
+	var moving: bool = absf(runner_vel.x) > 50.0 and runner_grounded
+	var bob: float = sin(time*12.0)*4.0 if moving else sin(time*2.5)*2.0
+	var stretch: float = clampf(absf(runner_vel.y)/800.0,0.0,1.0)
 	# shadow
 	draw_ellipse(p+Vector2(0,42),Vector2(34,10),Color(0.02,0.05,0.08,0.32))
 	# scarf
@@ -162,7 +162,7 @@ func draw_hud():
 	draw_string(ThemeDB.fallback_font,Vector2(1518,101),str(int(mana)),HORIZONTAL_ALIGNMENT_LEFT,70,26,Color.WHITE)
 	# instruction banner
 	if message_t > 0:
-		var alpha := min(1.0,message_t*2.0)
+		var alpha: float = minf(1.0,message_t*2.0)
 		draw_style_box(glow_box(Color(0.02,0.06,0.12,0.88*alpha),20),Rect2(420,150,1080,74))
 		draw_string(ThemeDB.fallback_font,Vector2(450,199),message,HORIZONTAL_ALIGNMENT_CENTER,1020,27,Color(1,1,1,alpha))
 	# runner controls
