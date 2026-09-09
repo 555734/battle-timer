@@ -42,6 +42,22 @@ jobs:
             keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -dname 'CN=Android Debug,O=Android,C=US' -keyalg RSA -keysize 2048 -validity 10000
           fi
 
+      - name: Configure Godot 4.4 Android editor settings
+        run: |
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-4.tres <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$HOME/.android/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+          cp ~/.config/godot/editor_settings-4.tres ~/.config/godot/editor_settings-4.4.tres
+          cat ~/.config/godot/editor_settings-4.4.tres
+
       - name: Export Godot Android debug APK
         id: export
         uses: firebelley/godot-export@v8.0.0
@@ -54,11 +70,16 @@ jobs:
           use_preset_export_path: true
           verbose: true
 
-      - name: Verify APK
+      - name: Locate and normalize APK
         run: |
-          find godot_v02 -type f -name '*.apk' -print
-          test -f godot_v02/builds/runner-god-v0.2.apk
+          APK="$(find "$HOME/.local/share/godot/builds" godot_v02 -type f -name 'runner-god-v0.2.apk' -print -quit 2>/dev/null)"
+          test -n "$APK"
+          mkdir -p godot_v02/builds
+          if [ "$APK" != "godot_v02/builds/runner-god-v0.2.apk" ]; then
+            cp "$APK" godot_v02/builds/runner-god-v0.2.apk
+          fi
           ls -lh godot_v02/builds/runner-god-v0.2.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose godot_v02/builds/runner-god-v0.2.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
