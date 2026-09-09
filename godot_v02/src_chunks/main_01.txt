@@ -1,0 +1,180 @@
+			god_platforms.remove_at(i)
+			if dragging_platform == i: dragging_platform = -1
+
+func _update_particles(delta):
+	for i in range(particles.size()-1, -1, -1):
+		var p = particles[i]
+		p.life -= delta
+		p.pos += p.vel * delta
+		p.vel.y += 250.0 * delta
+		p.vel *= pow(0.22, delta)
+		if p.life <= 0: particles.remove_at(i)
+
+func _update_camera(delta):
+	var target := max(0.0, runner_pos.x - 620.0)
+	camera_x = lerp(camera_x, target, 1.0 - exp(-4.5*delta))
+
+func _update_section_message():
+	var s := int(runner_pos.x / 850.0)
+	if s == last_section: return
+	last_section = s
+	match s:
+		0: show_message("最初の大穴。神は CREATE で空中に足場を描く", 4.0)
+		1: show_message("青い結晶を取ると神力回復。足場は約18秒で消える", 4.0)
+		2: show_message("MOVE：作った足場をつかんで運べる", 4.0)
+		3: show_message("FREEZE：敵を4秒停止。ランナーが突破する隙を作る", 4.0)
+		4: show_message("LIFT：ランナーを風で押し上げる。最後の谷を越えよう", 4.0)
+
+func show_message(t:String, sec:float):
+	message = t
+	message_t = sec
+
+func respawn():
+	runner_pos = checkpoint
+	runner_vel = Vector2.ZERO
+	respawn_flash = 0.5
+	screen_shake = 0.35
+	burst(checkpoint, Color(1,0.4,0.35), 22, 340)
+	show_message("落ちてもすぐ復帰。神とタイミングを合わせよう", 2.0)
+
+func burst(world:Vector2, col:Color, count:int, speed:float):
+	for i in range(count):
+		var a := randf()*TAU
+		var sp := speed * (0.35 + randf()*0.65)
+		particles.append({"pos":world, "vel":Vector2(cos(a),sin(a))*sp, "life":0.45+randf()*0.45, "col":col, "size":5+randf()*8})
+
+func _input(event):
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			_touch_down(event.index, event.position)
+		else:
+			_touch_up(event.index, event.position)
+	elif event is InputEventScreenDrag:
+		_touch_drag(event.index, event.position)
+	elif event is InputEventMouseButton:
+		# Desktop testing: mouse acts as god; keyboard acts as runner.
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed: _god_down(event.position)
+			else: _god_up(event.position)
+	elif event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_god_drag(event.position)
+	elif event is InputEventKey:
+		if event.keycode == KEY_A or event.keycode == KEY_LEFT: runner_left = event.pressed
+		if event.keycode == KEY_D or event.keycode == KEY_RIGHT: runner_right = event.pressed
+		if event.keycode == KEY_SPACE or event.keycode == KEY_UP: runner_jump = event.pressed
+
+func _touch_down(id:int, pos:Vector2):
+	if pos.y > 865:
+		touch_roles[id] = "runner"
+		runner_touches[id] = pos
+		_recalc_runner_touch()
+	else:
+		touch_roles[id] = "god"
+		if god_touch == -1:
+			god_touch = id
+			_god_down(pos)
+
+func _touch_drag(id:int, pos:Vector2):
+	if not touch_roles.has(id): return
+	if touch_roles[id] == "runner":
+		runner_touches[id] = pos
+		_recalc_runner_touch()
+	elif id == god_touch:
+		_god_drag(pos)
+
+func _touch_up(id:int, pos:Vector2):
+	if not touch_roles.has(id): return
+	if touch_roles[id] == "runner":
+		runner_touches.erase(id)
+		_recalc_runner_touch()
+	elif id == god_touch:
+		_god_up(pos)
+		god_touch = -1
+	touch_roles.erase(id)
+
+func _recalc_runner_touch():
+	runner_left = false; runner_right = false; runner_jump = false
+	for p in runner_touches.values():
+		if p.x < 430:
+			if p.x < 215: runner_left = true
+			else: runner_right = true
+		elif p.x > 1450:
+			runner_jump = true
+
+func _god_down(pos:Vector2):
+	if pos.y < 125:
+		if pos.x < 235: god_mode = 0
+		elif pos.x < 455: god_mode = 1
+		elif pos.x < 675: god_mode = 2
+		elif pos.x < 895: god_mode = 3
+		return
+	var w := Vector2(pos.x + camera_x, pos.y)
+	god_down_world = w; god_now_world = w
+	match god_mode:
+		1:
+			dragging_platform = find_platform(w)
+			if dragging_platform >= 0: drag_offset = god_platforms[dragging_platform].pos - w
+		2: freeze_enemy(w)
+		3: lift_runner(w)
+
+func _god_drag(pos:Vector2):
+	god_now_world = Vector2(pos.x + camera_x, pos.y)
+	if god_mode == 1 and dragging_platform >= 0 and dragging_platform < god_platforms.size():
+		var old:Vector2 = god_platforms[dragging_platform].pos
+		var np := god_now_world + drag_offset
+		np.y = clamp(np.y, 210.0, 790.0)
+		np.x = clamp(np.x, camera_x + 80, camera_x + 1840)
+		var delta_p := np-old
+		god_platforms[dragging_platform].pos = np
+		if runner_grounded and abs((runner_pos.y+RUNNER_SIZE.y/2) - old.y) < 12 and abs(runner_pos.x-old.x) < god_platforms[dragging_platform].size.x/2:
+			runner_pos += delta_p
+
+func _god_up(pos:Vector2):
+	var w := Vector2(pos.x + camera_x, pos.y)
+	god_now_world = w
+	if god_mode == 0:
+		create_platform(god_down_world, w)
+	dragging_platform = -1
+
+func create_platform(a:Vector2, b:Vector2):
+	var dx := clamp(abs(b.x-a.x), 90.0, 360.0)
+	var mid := Vector2((a.x+b.x)/2.0, clamp((a.y+b.y)/2.0, 180.0, 790.0))
+	var cost := 10.0 + dx*0.035
+	if mana < cost:
+		show_message("神力不足。結晶を取るか少し待とう", 1.6); return
+	mana -= cost
+	platform_serial += 1
+	god_platforms.append({"id":platform_serial, "pos":mid, "size":Vector2(dx, 34), "life":18.0})
+	if god_platforms.size() > 5: god_platforms.remove_at(0)
+	burst(mid, Color(0.25,0.85,1), 22, 220)
+	screen_shake = 0.12
+
+func find_platform(w:Vector2) -> int:
+	for i in range(god_platforms.size()-1, -1, -1):
+		var p = god_platforms[i]
+		if Rect2(p.pos.x-p.size.x/2-24,p.pos.y-50,p.size.x+48,100).has_point(w): return i
+	return -1
+
+func freeze_enemy(w:Vector2):
+	for e in enemies:
+		if e.p.distance_to(w) < 95:
+			if mana < 22: show_message("神力不足", 1.2); return
+			mana -= 22
+			e.frozen = 4.0
+			burst(e.p, Color(0.55,0.9,1), 30, 250)
+			show_message("4秒だけ停止！ 今のうちに！", 1.6)
+			return
+
+func lift_runner(w:Vector2):
+	if w.distance_to(runner_pos) > 150: return
+	if lift_cd > 0: show_message("LIFT は再充填中", 1.1); return
+	if mana < 25: show_message("神力不足", 1.1); return
+	mana -= 25; lift_cd = 2.5
+	runner_vel.y = min(runner_vel.y, -920.0)
+	runner_vel.x += 120.0
+	burst(runner_pos, Color(1,0.86,0.35), 34, 360)
+	screen_shake = 0.18
+
+func _draw():
+	var shake := Vector2.ZERO
+	if screen_shake > 0: shake = Vector2(randf_range(-8,8),randf_range(-5,5))*min(1.0,screen_shake*5.0)
