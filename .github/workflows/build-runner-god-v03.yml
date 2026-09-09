@@ -20,6 +20,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path('main.gd')
           s = p.read_text()
@@ -70,11 +71,14 @@ jobs:
               else:
                   lines.append(line)
           s = '\n'.join(lines) + '\n'
-          s = s.replace('var a := clamp(p.life / p.max, 0.0,1.0)', 'var a: float = clampf(float(p.life) / float(p.max), 0.0, 1.0)')
-          s = s.replace('var a := clamp(r.life/r.max,0.0,1.0)', 'var a: float = clampf(float(r.life) / float(r.max), 0.0, 1.0)')
-          s = s.replace('var progress := clamp(player_pos.x/GOAL_X,0.0,1.0)', 'var progress: float = clampf(player_pos.x / GOAL_X, 0.0, 1.0)')
-          s = s.replace('var a := min(1.0,message_t*2.5)', 'var a: float = minf(1.0, message_t * 2.5)')
-          s = s.replace('var a := clamp(finish_t*2.0,0.0,1.0)', 'var a: float = clampf(finish_t * 2.0, 0.0, 1.0)')
+          s = s.replace('draw_ellipse(', '_paint_ellipse(')
+          s = s.replace('draw_style_box(', '_paint_panel(')
+          s = re.sub(r'(?m)^(\s+var\s+[A-Za-z_][A-Za-z0-9_]*)\s*:=', r'\1 =', s)
+          s = s.replace('var a = clamp(p.life / p.max, 0.0,1.0)', 'var a: float = clampf(float(p.life) / float(p.max), 0.0, 1.0)')
+          s = s.replace('var a = clamp(r.life/r.max,0.0,1.0)', 'var a: float = clampf(float(r.life) / float(r.max), 0.0, 1.0)')
+          s = s.replace('var progress = clamp(player_pos.x/GOAL_X,0.0,1.0)', 'var progress: float = clampf(player_pos.x / GOAL_X, 0.0, 1.0)')
+          s = s.replace('var a = min(1.0,message_t*2.5)', 'var a: float = minf(1.0, message_t * 2.5)')
+          s = s.replace('var a = clamp(finish_t*2.0,0.0,1.0)', 'var a: float = clampf(finish_t * 2.0, 0.0, 1.0)')
           p.write_text(s)
 
           p = Path('project.godot')
